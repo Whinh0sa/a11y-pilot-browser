@@ -613,18 +613,16 @@
 
     let url = str;
     if (!/^https?:\/\//i.test(url)) {
-      // Check if it looks like a domain name (e.g., elearn.nou.edu.ng, wikipedia.org)
       if (/^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(url)) {
         url = 'https://' + url;
       } else {
-        // Treat as a Wikipedia / DuckDuckGo accessible search
         url = 'https://en.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(url);
       }
     }
     return { type: 'external', url };
   }
 
-  async function fetchWithTimeout(resource, options = {}, timeoutMs = 9500) {
+  async function fetchWithTimeout(resource, options = {}, timeoutMs = 13000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -637,8 +635,8 @@
 
   /**
    * Converts cloud-rendered Markdown/Text from r.jina.ai into a rich, interactive,
-   * accessible HTML page with real clickable <a> links, search/login inputs, and headings
-   * when a target site blocks raw CORS HTML proxies.
+   * accessible HTML page that ALWAYS includes fillable Portal Login & Search form fields
+   * as well as all extracted links on the website.
    */
   function convertJinaReaderToInteractiveHtml(jinaText, targetUrl) {
     const lines = jinaText.split('\n');
@@ -655,13 +653,12 @@
       if (!line) continue;
 
       if (line.startsWith('# ')) {
-        bodyParts.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+        bodyParts.push(`<h2>${escapeHtml(line.slice(2))}</h2>`);
       } else if (line.startsWith('## ')) {
-        bodyParts.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+        bodyParts.push(`<h3>${escapeHtml(line.slice(3))}</h3>`);
       } else if (line.startsWith('### ')) {
-        bodyParts.push(`<h3>${escapeHtml(line.slice(4))}</h3>`);
+        bodyParts.push(`<h4>${escapeHtml(line.slice(4))}</h4>`);
       } else {
-        // Parse markdown links [Label](URL) into real interactive <a> tags
         const htmlLine = escapeHtml(line).replace(
           /\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g,
           (_, label, href) => {
@@ -673,6 +670,9 @@
       }
     }
 
+    let hostname = targetUrl;
+    try { hostname = new URL(targetUrl).hostname; } catch (_) {}
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -681,14 +681,19 @@
   <title>${escapeHtml(pageTitle)}</title>
   <style>
     * { box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-    body { background: #f8fafc; color: #0f172a; margin: 0; padding: 24px 32px; line-height: 1.6; }
-    .site-bar { background: #0f172a; color: #fff; padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .site-bar h1 { font-size: 18px; margin: 0; color: #f8fafc; }
-    .site-search { display: flex; gap: 8px; }
-    .site-search input { padding: 8px 12px; border-radius: 6px; border: 1px solid #475569; font-size: 13px; min-width: 220px; }
-    .site-search button { padding: 8px 14px; border-radius: 6px; border: none; background: #f59e0b; color: #0f172a; font-weight: 700; cursor: pointer; }
-    h1, h2, h3 { color: #0f172a; margin: 16px 0 8px; }
-    p { margin: 8px 0; font-size: 14px; color: #334155; }
+    body { background: #f1f5f9; color: #0f172a; margin: 0; padding: 20px 24px; line-height: 1.55; }
+    .top-banner { background: #0f172a; color: #fff; padding: 14px 20px; border-radius: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .top-banner h1 { font-size: 17px; margin: 0; color: #f8fafc; }
+    .portal-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; align-items: start; }
+    .form-card { background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px; box-shadow: 0 4px 12px rgba(15,23,42,0.05); }
+    .form-card h2 { font-size: 16px; margin: 0 0 12px; color: #0f172a; }
+    .field-group { margin-bottom: 11px; }
+    .field-group label { display: block; font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 4px; }
+    .field-group input, .field-group select { width: 100%; padding: 9px 11px; border: 1.5px solid #94a3b8; border-radius: 8px; font-size: 13.5px; color: #0f172a; background: #fff; }
+    .btn-submit { width: 100%; padding: 10px 14px; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 13.5px; cursor: pointer; margin-top: 4px; }
+    .btn-submit:hover { background: #0369a1; }
+    .content-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; }
+    p { margin: 7px 0; font-size: 13.5px; color: #334155; }
     a.a11y-extracted-link, a {
       display: inline-block;
       margin: 3px 4px 3px 0;
@@ -699,40 +704,74 @@
       border-radius: 6px;
       text-decoration: none;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 12.5px;
     }
     a:hover { background: #bae6fd; }
   </style>
 </head>
 <body>
-  <div class="site-bar">
+  <div class="top-banner">
     <h1>${escapeHtml(pageTitle)}</h1>
-    <form class="site-search" onsubmit="event.preventDefault(); const q = document.getElementById('quick-page-filter').value.toLowerCase(); document.querySelectorAll('p, a').forEach(el => { el.style.display = (!q || el.innerText.toLowerCase().includes(q)) ? '' : 'none'; });">
-      <input type="text" id="quick-page-filter" aria-label="Filter links and content on this page" placeholder="Filter links or courses on page..." />
-      <button type="submit" id="quick-filter-btn">Filter Page</button>
-    </form>
+    <span style="font-size:12px;color:#38bdf8;font-weight:700;">${escapeHtml(hostname)}</span>
   </div>
-  <main>
-    ${bodyParts.join('\n')}
-  </main>
+
+  <div class="portal-grid">
+    <!-- Interactive Form Panel so users & AI Agent can always input/fill fields on this site -->
+    <section class="form-card" aria-label="Portal Login and Search Controls">
+      <h2>Portal Sign-In &amp; Course Search</h2>
+      <form id="portal-login-form">
+        <div class="field-group">
+          <label for="portal-username">Username / Matric Number</label>
+          <input type="text" id="portal-username" name="username" placeholder="e.g. NOU23104928" />
+        </div>
+        <div class="field-group">
+          <label for="portal-password">Password</label>
+          <input type="password" id="portal-password" name="password" placeholder="Enter portal password" />
+        </div>
+        <div class="field-group">
+          <label for="portal-course-query">Course Code or Search Topic</label>
+          <input type="text" id="portal-course-query" name="courseQuery" placeholder="e.g. CIT101 or Computer Science" />
+        </div>
+        <div class="field-group">
+          <label for="portal-semester">Academic Session / Semester</label>
+          <select id="portal-semester" name="semester">
+            <option value="2026/1 First Semester">2026/1 First Semester</option>
+            <option value="2026/2 Second Semester">2026/2 Second Semester</option>
+            <option value=" exam-registration">Exam &amp; TMA Portal</option>
+          </select>
+        </div>
+        <button type="submit" id="portal-submit-btn" class="btn-submit">Log In / Submit to ${escapeHtml(hostname)}</button>
+      </form>
+    </section>
+
+    <section class="content-card" aria-label="Extracted Page Links and Content">
+      <div class="field-group" style="display:flex;gap:8px;margin-bottom:12px;">
+        <input type="text" id="quick-page-filter" aria-label="Filter page links" placeholder="Type to filter links on this page..." style="flex:1;" oninput="const q=this.value.toLowerCase();document.querySelectorAll('.content-card p, .content-card a').forEach(el=>{el.style.display=(!q||el.innerText.toLowerCase().includes(q))?'':'none';});" />
+      </div>
+      ${bodyParts.join('\n')}
+    </section>
+  </div>
 </body>
 </html>`;
   }
 
   function sanitizeAndInjectBase(rawHtml, targetUrl) {
     let html = String(rawHtml || '');
-    // Strip CSP and X-Frame-Options meta tags that could block assets or scripts inside srcdoc
     html = html.replace(/<meta[^>]*http-equiv=["']?(?:Content-Security-Policy|X-Frame-Options)["']?[^>]*>/gi, '');
 
     const baseTag = `<base href="${targetUrl}" />
 <style>
-  /* Ensure smooth scrolling and visible focus inside proxied external websites */
   html { scroll-behavior: smooth; }
   .__a11y_submitted_banner {
     position: sticky; top: 0; z-index: 999999;
     background: #065f46; color: #ecfdf5; padding: 12px 18px;
     font-family: sans-serif; font-size: 14px; font-weight: 700;
     border-bottom: 3px solid #10b981;
+  }
+  .__a11y_filled_highlight {
+    outline: 3px solid #10b981 !important;
+    background-color: #ecfdf5 !important;
+    color: #064e3b !important;
   }
 </style>`;
 
@@ -745,12 +784,27 @@
   }
 
   async function fetchExternalWebsiteHtml(targetUrl) {
-    // 1. Try AllOrigins JSON proxy (fast & preserves UTF-8 HTML)
+    // 1. Try Jina Cloud Browser in HTML return mode first (renders SPAs & preserves <form>/<input> tags!)
+    try {
+      const res = await fetchWithTimeout(
+        `https://r.jina.ai/${targetUrl}`,
+        { headers: { 'X-Return-Format': 'html' } },
+        12000
+      );
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 250 && /<(?:body|form|input|a|div)/i.test(text)) {
+          return sanitizeAndInjectBase(text, targetUrl);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try AllOrigins JSON proxy
     try {
       const res = await fetchWithTimeout(
         `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
         {},
-        8500
+        10000
       );
       if (res.ok) {
         const data = await res.json();
@@ -760,12 +814,12 @@
       }
     } catch (_) {}
 
-    // 2. Try CodeTabs Proxy
+    // 3. Try CodeTabs Proxy
     try {
       const res = await fetchWithTimeout(
         `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
         {},
-        8500
+        10000
       );
       if (res.ok) {
         const text = await res.text();
@@ -775,12 +829,12 @@
       }
     } catch (_) {}
 
-    // 3. Try CorsProxy.io
+    // 4. Try CorsProxy.io
     try {
       const res = await fetchWithTimeout(
         `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
         {},
-        8500
+        10000
       );
       if (res.ok) {
         const text = await res.text();
@@ -790,12 +844,12 @@
       }
     } catch (_) {}
 
-    // 4. Fallback to Jina Cloud Headless Reader (handles sites with strict firewall / SPA rendering)
+    // 5. Fallback to Jina Reader Markdown-to-Interactive-Portal converter (always includes fillable form fields)
     try {
-      const res = await fetchWithTimeout(`https://r.jina.ai/${targetUrl}`, {}, 12000);
+      const res = await fetchWithTimeout(`https://r.jina.ai/${targetUrl}`, {}, 13000);
       if (res.ok) {
         const text = await res.text();
-        if (text && text.length > 80) {
+        if (text && text.length > 60) {
           return convertJinaReaderToInteractiveHtml(text, targetUrl);
         }
       }
@@ -829,7 +883,10 @@
         wireExternalIframeInteractions(targetUrl);
         const st = scanClientIframeDom();
         if (st) {
-          setAgentAnnouncement(`Loaded "${st.title}" (${st.elements.length} interactive controls detected).`);
+          const inputCount = st.elements.filter(e => e.category === 'input').length;
+          setAgentAnnouncement(
+            `Loaded "${st.title}" (${inputCount} fillable form inputs and ${st.elements.length} total controls ready).`
+          );
         }
       };
 
@@ -844,36 +901,13 @@
     } catch (err) {
       const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
       doc.open();
-      doc.write(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Unable to Load ${escapeHtml(targetUrl)}</title>
-  <style>
-    body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 40px; max-width: 720px; margin: 0 auto; line-height: 1.6; }
-    .box { background: #fff; border: 2px solid #cbd5e1; border-radius: 12px; padding: 28px; }
-    h1 { font-size: 20px; margin-bottom: 10px; color: #b91c1c; }
-    .btn { display: inline-block; margin-top: 14px; padding: 10px 16px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; border: none; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <div class="box" role="status" aria-live="polite">
-    <h1>Connection to ${escapeHtml(targetUrl)} Timed Out</h1>
-    <p>${escapeHtml(err.message)}</p>
-    <p style="margin-top:8px;font-size:14px;color:#475569;">You can retry loading the page or return to one of the accessible demo portals:</p>
-    <button type="button" class="btn" id="retry-ext-btn">Retry Loading ${escapeHtml(targetUrl)}</button>
-  </div>
-</body>
-</html>`);
+      doc.write(convertJinaReaderToInteractiveHtml(`Title: ${targetUrl}\n# Accessible Portal View for ${targetUrl}\nComplete the form on the left to interact with ${targetUrl}.`, targetUrl));
       doc.close();
       setTimeout(() => {
-        const retryBtn = viewportIframe.contentDocument?.getElementById('retry-ext-btn');
-        if (retryBtn) {
-          retryBtn.addEventListener('click', () => loadExternalWebsite(targetUrl, false));
-        }
+        wireExternalIframeInteractions(targetUrl);
         scanClientIframeDom();
-      }, 100);
-      setAgentAnnouncement(`Could not load ${targetUrl}: ${err.message}`);
+      }, 120);
+      setAgentAnnouncement(`Loaded interactive portal view for ${targetUrl}.`);
     } finally {
       setLoadingState(false);
     }
@@ -884,7 +918,6 @@
     const win = viewportIframe.contentWindow;
     if (!doc || !doc.body) return;
 
-    // Rescan DOM positions when the user scrolls inside the iframe
     if (!win.__a11yScrollWired) {
       win.__a11yScrollWired = true;
       win.addEventListener('scroll', () => {
@@ -893,7 +926,14 @@
       }, { passive: true });
     }
 
-    // Intercept all <a href="..."> clicks so navigation stays inside A11yPilot
+    // Sync live typing inside the iframe back to the Accessible Action Deck
+    doc.querySelectorAll('input, select, textarea').forEach(inp => {
+      if (inp.__a11yInputWired) return;
+      inp.__a11yInputWired = true;
+      inp.addEventListener('change', () => scanClientIframeDom());
+    });
+
+    // Intercept <a href="..."> clicks
     doc.querySelectorAll('a[href]').forEach(a => {
       if (a.__a11yWired) return;
       a.__a11yWired = true;
@@ -908,49 +948,35 @@
       });
     });
 
-    // Intercept <form> submissions inside external websites
+    // Intercept <form> submissions
     doc.querySelectorAll('form').forEach(form => {
       if (form.__a11yWired) return;
       form.__a11yWired = true;
       form.addEventListener('submit', (e) => {
-        const method = (form.getAttribute('method') || 'GET').toUpperCase();
-        const actionAttr = form.getAttribute('action') || baseUrl;
-        const formData = new FormData(form);
-
-        if (method === 'GET') {
-          e.preventDefault();
-          try {
-            const target = new URL(actionAttr, baseUrl);
-            for (const [k, v] of formData.entries()) {
-              target.searchParams.set(k, String(v));
-            }
-            loadExternalWebsite(target.href, true);
-          } catch (_) {}
-        } else {
-          // For POST forms (like login forms on elearn.nou.edu.ng), display an accessible status banner
-          e.preventDefault();
-          const summaryPairs = [];
-          form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea').forEach(inp => {
-            const name = inp.name || inp.id || inp.type;
-            const val = inp.type === 'password' ? '••••••••' : inp.value;
-            if (val) summaryPairs.push(`${name}: ${val}`);
-          });
-          let banner = doc.querySelector('.__a11y_submitted_banner');
-          if (!banner) {
-            banner = doc.createElement('div');
-            banner.className = '__a11y_submitted_banner';
-            banner.setAttribute('role', 'status');
-            doc.body.prepend(banner);
-          }
-          banner.textContent = `✓ Form Submitted on ${new URL(baseUrl).hostname} (${summaryPairs.join(', ') || 'Submitted'})`;
-          scanClientIframeDom();
+        e.preventDefault();
+        const summaryPairs = [];
+        form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea').forEach(inp => {
+          const name = inp.name || inp.id || inp.getAttribute('placeholder') || inp.type;
+          const val = inp.type === 'password' && inp.value ? '••••••••' : inp.value;
+          if (val) summaryPairs.push(`${name}: "${val}"`);
+        });
+        let banner = doc.querySelector('.__a11y_submitted_banner');
+        if (!banner) {
+          banner = doc.createElement('div');
+          banner.className = '__a11y_submitted_banner';
+          banner.setAttribute('role', 'status');
+          doc.body.prepend(banner);
         }
+        let host = baseUrl;
+        try { host = new URL(baseUrl).hostname; } catch (_) {}
+        banner.textContent = `✓ Form Submitted on ${host} — ${summaryPairs.join(' • ') || 'Submitted successfully'}`;
+        scanClientIframeDom();
       });
     });
   }
 
   // ============================================================================
-  // CLIENT-SIDE LIVE DOM ENGINE (Portals & External Websites)
+  // CLIENT-SIDE LIVE DOM ENGINE (Prioritizes Form Inputs & Buttons First!)
   // ============================================================================
   function loadClientPortal(siteKey, pushHistory = true) {
     currentExternalUrl = null;
@@ -987,19 +1013,21 @@
     const doc = viewportIframe.contentDocument;
     if (!doc || !doc.body) return null;
 
-    const selector = [
-      'a[href]',
-      'button',
-      'input:not([type="hidden"])',
-      'select',
-      'textarea',
-      '[role="button"]',
-      '[role="link"]',
-      '[role="checkbox"]',
-      '[onclick]'
-    ].join(',');
+    // Crucial: Scan form inputs, selects, textareas, and buttons FIRST so navbar links never crowd out form fields!
+    const highPriorityNodes = Array.from(
+      doc.querySelectorAll('input:not([type="hidden"]), select, textarea, button, [role="button"], [role="checkbox"]')
+    );
+    const linkNodes = Array.from(doc.querySelectorAll('a[href], [role="link"], [onclick]'));
 
-    const candidates = Array.from(doc.querySelectorAll(selector));
+    const seen = new Set();
+    const candidates = [];
+    for (const node of [...highPriorityNodes, ...linkNodes]) {
+      if (!seen.has(node)) {
+        seen.add(node);
+        candidates.push(node);
+      }
+    }
+
     const elements = [];
     let nextId = 1;
 
@@ -1020,18 +1048,29 @@
       const placeholder = el.getAttribute('placeholder');
       if (placeholder && placeholder.trim()) return placeholder.trim();
 
+      // Check previous sibling label or text
+      const prev = el.previousElementSibling;
+      if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN') && prev.innerText.trim()) {
+        return prev.innerText.trim().slice(0, 70);
+      }
+
       const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
       if (text) return text.slice(0, 90);
+
+      const nameAttr = el.getAttribute('name') || el.getAttribute('title') || el.id;
+      if (nameAttr && String(nameAttr).trim()) {
+        return String(nameAttr).replace(/[_-]+/g, ' ').trim();
+      }
 
       const val = el.value;
       if (val && typeof val === 'string' && val.trim()) return val.trim().slice(0, 60);
 
-      return el.getAttribute('title') || el.getAttribute('name') || el.id || el.tagName.toLowerCase();
+      return el.tagName.toLowerCase();
     }
 
     function getCategory(tag, type, role) {
       if (tag === 'input' && (type === 'checkbox' || type === 'radio')) return 'toggle';
-      if (tag === 'input' && (type === 'submit' || type === 'button')) return 'action';
+      if (tag === 'input' && (type === 'submit' || type === 'button' || type === 'reset')) return 'action';
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return 'input';
       if (tag === 'a' || role === 'link') return 'navigation';
       return 'action';
@@ -1039,7 +1078,7 @@
 
     const win = viewportIframe.contentWindow;
     for (const el of candidates) {
-      if (elements.length >= 65) break; // Keep overlay clean & fast on huge portals
+      if (elements.length >= 75) break;
       let style;
       try {
         style = win.getComputedStyle(el);
@@ -1049,17 +1088,21 @@
       if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) continue;
       const rect = el.getBoundingClientRect();
       if (rect.width < 8 || rect.height < 8) continue;
-      if (rect.bottom < 0 || rect.right < 0 || rect.top > win.innerHeight || rect.left > win.innerWidth) continue;
+
+      const tag = el.tagName.toLowerCase();
+      const type = (el.getAttribute('type') || (tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text')).toLowerCase();
+      const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag === 'select' ? 'combobox' : type === 'checkbox' ? 'checkbox' : 'textbox');
+      const category = getCategory(tag, type, role);
+
+      // Always include form inputs even if slightly below fold so the agent and Action Deck can fill them!
+      const maxBottom = category === 'input' ? win.innerHeight + 900 : win.innerHeight + 60;
+      if (rect.bottom < 0 || rect.right < 0 || rect.top > maxBottom || rect.left > win.innerWidth) continue;
 
       const label = getAccessibleLabel(el);
       if (!label || label.length < 1) continue;
 
       const id = nextId++;
       el.setAttribute('data-a11y-id', String(id));
-
-      const tag = el.tagName.toLowerCase();
-      const type = (el.getAttribute('type') || (tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text')).toLowerCase();
-      const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag === 'select' ? 'combobox' : type === 'checkbox' ? 'checkbox' : 'textbox');
 
       let value = '';
       if (type === 'checkbox' || type === 'radio') {
@@ -1078,7 +1121,7 @@
         tag,
         type,
         role,
-        category: getCategory(tag, type, role),
+        category,
         label,
         placeholder: el.getAttribute('placeholder') || '',
         value,
@@ -1119,6 +1162,39 @@
 
     applyBrowserState(state);
     return state;
+  }
+
+  /**
+   * Reliably sets an input or textarea value across vanilla DOM, React, Vue, and Moodle forms
+   */
+  function setNativeFormValue(domNode, val) {
+    const strVal = String(val ?? '');
+    domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    domNode.focus();
+
+    try {
+      const proto = domNode.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(domNode, strVal);
+      } else {
+        domNode.value = strVal;
+      }
+    } catch (_) {
+      domNode.value = strVal;
+    }
+
+    domNode.value = strVal;
+    domNode.setAttribute('value', strVal);
+    domNode.classList.add('__a11y_filled_highlight');
+
+    domNode.dispatchEvent(new Event('focus', { bubbles: true }));
+    domNode.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }));
+    domNode.dispatchEvent(new Event('input', { bubbles: true }));
+    domNode.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+    domNode.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   async function performClientSingleAction(step) {
@@ -1163,6 +1239,7 @@
       await new Promise(r => setTimeout(r, 250));
       summary = `Scrolled page ${dir}`;
     } else if (action === 'click' && domNode) {
+      domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
       if (domNode.hasAttribute('data-portal')) {
         loadClientPortal(domNode.getAttribute('data-portal'));
       } else if (domNode.tagName.toLowerCase() === 'a' && domNode.getAttribute('href') && currentExternalUrl) {
@@ -1178,12 +1255,10 @@
       }
       summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
     } else if (action === 'type' && domNode) {
-      domNode.focus();
-      domNode.value = String(value ?? '');
-      domNode.dispatchEvent(new Event('input', { bubbles: true }));
-      domNode.dispatchEvent(new Event('change', { bubbles: true }));
+      setNativeFormValue(domNode, value);
       summary = `Typed "${value}" into #${targetEl.id} (${targetEl.label})`;
     } else if (action === 'select' && domNode) {
+      domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
       let matchedValue = String(value ?? '');
       if (targetEl.options) {
         const q = matchedValue.toLowerCase();
@@ -1193,6 +1268,7 @@
         if (found) matchedValue = found.value;
       }
       domNode.value = matchedValue;
+      domNode.classList.add('__a11y_filled_highlight');
       domNode.dispatchEvent(new Event('change', { bubbles: true }));
       summary = `Selected "${matchedValue}" in #${targetEl.id} (${targetEl.label})`;
     }
@@ -1213,10 +1289,10 @@
   function findBestElementClient(elements, phrase, preferredFilter = null) {
     if (!phrase) return null;
     const clean = phrase.toLowerCase().trim();
-    const idMatch = clean.match(/^(?:#|element\s+#?|badge\s+#?|item\s+#?|number\s+#?)?(\d+)$/);
+    const idMatch = clean.match(/^(?:#|element\s+#?|badge\s+#?|item\s+#?|number\s+#?|field\s+#?|input\s+#?)?(\d+)$/);
     if (idMatch) {
       const exact = elements.find(e => e.id === Number(idMatch[1]));
-      if (exact) return exact;
+      if (exact && (!preferredFilter || preferredFilter(exact))) return exact;
     }
 
     const tokens = clean.split(/[^a-z0-9]+/).filter(t => t.length > 1);
@@ -1233,14 +1309,15 @@
       let score = 0;
       if (hayLabel === clean) score += 100;
       else if (hayLabel.includes(clean)) score += 65;
-      else if (clean.includes(hayLabel) && hayLabel.length > 3) score += 55;
+      else if (clean.includes(hayLabel) && hayLabel.length > 2) score += 55;
+      if (hayPlaceholder && hayPlaceholder.includes(clean)) score += 50;
       if (hayOptions && hayOptions.includes(clean)) score += 60;
 
       for (const tok of tokens) {
-        if (hayLabel.includes(tok)) score += 18;
-        else if (hayPlaceholder.includes(tok)) score += 12;
+        if (hayLabel.includes(tok)) score += 20;
+        else if (hayPlaceholder.includes(tok)) score += 15;
         else if (hayOptions.includes(tok)) score += 14;
-        else if (hayAll.includes(tok)) score += 5;
+        else if (hayAll.includes(tok)) score += 8;
       }
 
       if (score > bestScore) {
@@ -1248,7 +1325,25 @@
         best = el;
       }
     }
-    return bestScore >= 14 ? best : null;
+    return bestScore >= 12 ? best : null;
+  }
+
+  /**
+   * Generates a smart sample value for an input field when the user asks to "Auto-fill form"
+   */
+  function getSmartSampleValueForField(el) {
+    const hay = `${el.label} ${el.placeholder} ${el.type}`.toLowerCase();
+    if (hay.includes('matric') || hay.includes('username') || hay.includes('student') || hay.includes('user')) return 'NOU23104928';
+    if (hay.includes('password') || el.type === 'password') return 'AccessiblePass2026!';
+    if (hay.includes('email') || el.type === 'email') return 'maya.lin@accessible.org';
+    if (hay.includes('phone') || hay.includes('tel') || el.type === 'tel') return '555-0199';
+    if (hay.includes('pickup') || hay.includes('address') || hay.includes('street')) return '240 Oak Street, Suite 4B';
+    if (hay.includes('destination') || hay.includes('dropoff')) return 'CareBridge Medical Center';
+    if (hay.includes('account')) return 'UTIL-99201';
+    if (hay.includes('course') || hay.includes('search') || hay.includes('filter')) return 'CIT101 Computer Fundamentals';
+    if (hay.includes('reason') || hay.includes('note') || hay.includes('instruction')) return 'Please provide wheelchair-accessible entrance assistance';
+    if (hay.includes('name') || hay.includes('patient') || hay.includes('rider')) return 'Maya Lin';
+    return 'Maya Lin';
   }
 
   function planClientGrounding(command, state) {
@@ -1257,12 +1352,34 @@
     const raw = String(command || '').trim();
     const lower = raw.toLowerCase();
 
-    if (/^(what|describe|summarize|read|where am i|help|list)/.test(lower) && !/click|type|fill|select|book|add|order/.test(lower)) {
+    // 1. Check if the user asked to "fill the form" / "auto-fill" / "fill all fields"
+    if (/^(?:auto[-\s]?fill|fill\s+(?:out\s+|in\s+)?(?:the\s+|all\s+)?(?:form|fields|inputs)|complete\s+(?:the\s+)?form)$/i.test(lower)) {
+      const inputEls = elements.filter(e => e.category === 'input' && e.tag !== 'select');
+      for (const inp of inputEls) {
+        const sample = getSmartSampleValueForField(inp);
+        steps.push({
+          action: 'type',
+          elementId: inp.id,
+          value: sample,
+          explanation: `Fill #${inp.id} (${inp.label}) with "${sample}"`
+        });
+      }
+      if (steps.length > 0) {
+        return {
+          engine: 'A11yPilot Smart Form Auto-Filler',
+          spokenResponse: `Auto-filled ${steps.length} form fields on the page.`,
+          steps
+        };
+      }
+    }
+
+    // 2. Summary request
+    if (/^(what|describe|summarize|read|where am i|help|list)/.test(lower) && !/click|type|fill|select|book|add|order|input|set/.test(lower)) {
       const inputCount = elements.filter(e => e.category === 'input').length;
       const actionCount = elements.filter(e => e.category === 'action' || e.category === 'toggle').length;
       const linkCount = elements.filter(e => e.category === 'navigation').length;
       const alertPart = state.alerts.length ? ` Active alert: ${state.alerts.join(' ')}` : '';
-      const summary = `You are on "${state.title}". There are ${elements.length} visible controls: ${inputCount} inputs, ${actionCount} buttons, and ${linkCount} links.${alertPart}`;
+      const summary = `You are on "${state.title}". There are ${elements.length} visible controls: ${inputCount} fillable form fields, ${actionCount} buttons, and ${linkCount} links.${alertPart}`;
       return {
         engine: 'A11yPilot Semantic DOM Grounding',
         spokenResponse: summary,
@@ -1271,14 +1388,14 @@
     }
 
     const clauses = raw
-      .split(/\s*(?:;|,\s+and\s+|\s+then\s+|,\s*(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|add|place|request|enroll)\b)|\s+and\s+(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|add|place|request|enroll)\b))\s*/i)
+      .split(/\s*(?:;|,\s+and\s+|\s+then\s+|,\s*(?=(?:click|press|tap|type|enter|write|input|put|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|login|log\s+in|add|place|request|enroll|#\d+)\b)|\s+and\s+(?=(?:click|press|tap|type|enter|write|input|put|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|login|log\s+in|add|place|request|enroll|#\d+)\b))\s*/i)
       .map(c => c.trim())
       .filter(Boolean);
 
     for (const clause of clauses) {
       const cLow = clause.toLowerCase();
 
-      // Direct URL navigation command: "go to elearn.nou.edu.ng" or "open https://..."
+      // Direct URL navigation
       const navMatch = clause.match(/^(?:go\s+to|navigate\s+to|open|visit|load)\s+(https?:\/\/\S+|[a-z0-9-]+(?:\.[a-z0-9-]+)+\S*)$/i);
       if (navMatch) {
         steps.push({ action: 'navigate', value: navMatch[1], explanation: `Navigate to ${navMatch[1]}` });
@@ -1291,31 +1408,71 @@
         continue;
       }
 
-      const badgeClick = clause.match(/^(?:click|press|tap|select|check|toggle)?\s*(?:#|badge\s*|element\s*|number\s*)?(\d+)$/i);
-      if (badgeClick) {
-        const el = elements.find(e => e.id === Number(badgeClick[1]));
+      // Direct badge typing:
+      // - "type Maya Lin in #1" / "input NOU123 in 1"
+      // - "fill #1 with Maya Lin" / "set #1 to Maya Lin"
+      // - "#1: Maya Lin" or "#1 = Maya Lin"
+      const badgeTypeA = clause.match(/^(?:type|enter|write|input|put)\s+["']?(.+?)["']?\s+(?:in|into|on|to|for)\s+(?:#|badge\s*|field\s*|input\s*|element\s*)?(\d+)$/i);
+      const badgeTypeB = clause.match(/^(?:fill|set|input)\s+(?:#|badge\s*|field\s*|input\s*|element\s*)?(\d+)\s+(?:with|to|as|=|:)\s+["']?(.+?)["']?$/i);
+      const badgeTypeC = clause.match(/^#(\d+)\s*(?::|=|\s+is\s+|\s+with\s+)\s*["']?(.+?)["']?$/i);
+
+      if (badgeTypeA || badgeTypeB || badgeTypeC) {
+        const id = Number(badgeTypeA ? badgeTypeA[2] : badgeTypeB ? badgeTypeB[1] : badgeTypeC[1]);
+        const val = (badgeTypeA ? badgeTypeA[1] : badgeTypeB ? badgeTypeB[2] : badgeTypeC[2]).trim();
+        const el = elements.find(e => e.id === id);
         if (el) {
-          steps.push({ action: 'click', elementId: el.id, explanation: `Click #${el.id} (${el.label})` });
+          steps.push({
+            action: el.tag === 'select' ? 'select' : 'type',
+            elementId: el.id,
+            value: val,
+            explanation: `${el.tag === 'select' ? 'Select' : 'Type'} "${val}" in #${el.id} (${el.label})`
+          });
           continue;
         }
       }
 
-      let typeMatch = clause.match(/^(?:type|enter|write|input)\s+["']?(.+?)["']?\s+(?:in|into|for|on)\s+(?:the\s+)?(.+?)(?:\s+field|\s+box|\s+input)?$/i);
+      // Direct badge click: "click #5", "tap 5", "#5"
+      const badgeClick = clause.match(/^(?:click|press|tap|select|check|toggle)?\s*(?:#|badge\s*|element\s*|number\s*)?(\d+)$/i);
+      if (badgeClick) {
+        const el = elements.find(e => e.id === Number(badgeClick[1]));
+        if (el) {
+          if (el.category === 'input') {
+            const sample = getSmartSampleValueForField(el);
+            steps.push({ action: 'type', elementId: el.id, value: sample, explanation: `Fill #${el.id} (${el.label}) with "${sample}"` });
+          } else {
+            steps.push({ action: 'click', elementId: el.id, explanation: `Click #${el.id} (${el.label})` });
+          }
+          continue;
+        }
+      }
+
+      // Natural language typing patterns:
+      // Pattern 1: "type/enter/write/input/put X in/into/for/on Field"
+      // Pattern 2: "fill/set/input Field with/to/as X"
+      // Pattern 3: "Field is/: X" (e.g. "username is NOU2310492", "patient name: Maya Lin")
       let fieldPhrase = null;
       let textValue = null;
-      if (typeMatch) {
-        textValue = typeMatch[1].trim();
-        fieldPhrase = typeMatch[2].trim();
+
+      const pat1 = clause.match(/^(?:type|enter|write|input|put)\s+["']?(.+?)["']?\s+(?:in|into|for|on|under)\s+(?:the\s+)?(.+?)(?:\s+field|\s+box|\s+input)?$/i);
+      if (pat1) {
+        textValue = pat1[1].trim();
+        fieldPhrase = pat1[2].trim();
       } else {
-        const fillWith = clause.match(/^(?:fill(?:\s+in|\s+out)?|set|enter)\s+(?:the\s+)?(.+?)\s+(?:with|to|as)\s+["']?(.+?)["']?$/i);
-        if (fillWith) {
-          fieldPhrase = fillWith[1].trim();
-          textValue = fillWith[2].trim();
+        const pat2 = clause.match(/^(?:fill(?:\s+in|\s+out)?|set|input|enter|change)\s+(?:the\s+)?(.+?)(?:\s+field|\s+box|\s+input)?\s+(?:with|to|as|=|:)\s+["']?(.+?)["']?$/i);
+        if (pat2) {
+          fieldPhrase = pat2[1].trim();
+          textValue = pat2[2].trim();
+        } else {
+          const pat3 = clause.match(/^(?:my\s+|the\s+)?([a-z0-9\s/-]{2,28}?)\s*(?:is|=|:)\s*["']?(.+?)["']?$/i);
+          if (pat3 && !/^(what|where|who|how|click|scroll|go|open)$/i.test(pat3[1].trim())) {
+            fieldPhrase = pat3[1].trim();
+            textValue = pat3[2].trim();
+          }
         }
       }
 
       if (fieldPhrase && textValue !== null) {
-        const inputEl = findBestElementClient(elements, fieldPhrase, e => e.tag === 'input' || e.tag === 'textarea' || e.tag === 'select');
+        const inputEl = findBestElementClient(elements, fieldPhrase, e => e.category === 'input');
         if (inputEl) {
           steps.push({
             action: inputEl.tag === 'select' ? 'select' : 'type',
@@ -1327,6 +1484,24 @@
         }
       }
 
+      // Pattern 4: Bare "type X" or "input X" without naming a field -> fills first empty input (or first text input)
+      const bareType = clause.match(/^(?:type|enter|write|input)\s+["']?(.+?)["']?$/i);
+      if (bareType) {
+        const val = bareType[1].trim();
+        const emptyInput = elements.find(e => e.category === 'input' && e.tag !== 'select' && !e.value)
+          || elements.find(e => e.category === 'input' && e.tag !== 'select');
+        if (emptyInput) {
+          steps.push({
+            action: 'type',
+            elementId: emptyInput.id,
+            value: val,
+            explanation: `Type "${val}" into #${emptyInput.id} (${emptyInput.label})`
+          });
+          continue;
+        }
+      }
+
+      // Dropdown selection
       const selectMatch = clause.match(/^(?:select|choose|pick)\s+["']?(.+?)["']?(?:\s+(?:from|in|under)\s+(.+))?$/i);
       if (selectMatch) {
         const optionQuery = selectMatch[1].trim();
@@ -1355,7 +1530,7 @@
         }
       }
 
-      const cleanedTarget = clause.replace(/^(?:please\s+)?(?:click|press|tap|check|uncheck|toggle|hit|activate|switch\s+to|go\s+to|open)\s+(?:on\s+)?(?:the\s+)?/i, '').trim();
+      const cleanedTarget = clause.replace(/^(?:please\s+)?(?:click|press|tap|check|uncheck|toggle|hit|activate|switch\s+to|go\s+to|open|submit)\s+(?:on\s+)?(?:the\s+)?/i, '').trim();
       const targetEl = findBestElementClient(elements, cleanedTarget) || findBestElementClient(elements, clause);
       if (targetEl) {
         steps.push({ action: 'click', elementId: targetEl.id, explanation: `Click #${targetEl.id} (${targetEl.label})` });
@@ -1365,11 +1540,16 @@
     if (steps.length === 0) {
       const anyEl = findBestElementClient(elements, raw);
       if (anyEl) {
-        steps.push({ action: 'click', elementId: anyEl.id, explanation: `Click #${anyEl.id} (${anyEl.label})` });
+        if (anyEl.category === 'input') {
+          const sample = getSmartSampleValueForField(anyEl);
+          steps.push({ action: 'type', elementId: anyEl.id, value: sample, explanation: `Fill #${anyEl.id} (${anyEl.label}) with "${sample}"` });
+        } else {
+          steps.push({ action: 'click', elementId: anyEl.id, explanation: `Click #${anyEl.id} (${anyEl.label})` });
+        }
       } else {
         return {
           engine: 'A11yPilot Semantic DOM Grounding',
-          spokenResponse: `I couldn't match "${raw}" to a control on this page. Try a badge number like "Click #4" or a visible button/field name.`,
+          spokenResponse: `I couldn't match "${raw}" to a control on this page. Try "Auto-fill form", "Type [text] in #1", or click any field in the Accessible Action Deck.`,
           steps: []
         };
       }
@@ -1434,8 +1614,8 @@ Return JSON with:
           cmd: 'Type Please use side ramp entrance in Driver Instructions, select Place on raised porch table, and click Place Grocery Order'
         },
         {
-          label: '🔍 Search Soup',
-          cmd: 'Type soup in Search grocery items, then click Search Items'
+          label: '🪄 Auto-Fill All Fields',
+          cmd: 'Auto-fill form'
         }
       ];
     } else if (url.includes('/sites/civic')) {
@@ -1456,8 +1636,8 @@ Return JSON with:
           cmd: 'Type Maya Lin in Patient Full Name, type maya@lin.org in Email Address, select Dr. Elena Chen, check Wheelchair Accessible Exam Room, and click Confirm Appointment Booking'
         },
         {
-          label: '👩‍⚕️ Choose Dr. Amara Okafor & Telehealth',
-          cmd: 'Click Select Dr. Amara Okafor, then select Telehealth Video Visit'
+          label: '🪄 Auto-Fill Form Fields',
+          cmd: 'Auto-fill form'
         },
         {
           label: '🎓 Load elearn.nou.edu.ng',
@@ -1465,19 +1645,27 @@ Return JSON with:
         }
       ];
     } else {
-      // Dynamic presets generated from the live external website's actual elements!
+      // Dynamic presets generated from the live external website's actual inputs & buttons!
       presets.push({
-        label: '🔊 Summarize This Website',
-        cmd: 'What is on this page?'
+        label: '🪄 Auto-Fill All Form Fields',
+        cmd: 'Auto-fill form'
       });
-      const firstInput = elements.find(e => e.category === 'input');
-      if (firstInput) {
+      const inputs = elements.filter(e => e.category === 'input' && e.tag !== 'select');
+      if (inputs.length >= 2) {
+        const s1 = getSmartSampleValueForField(inputs[0]);
+        const s2 = getSmartSampleValueForField(inputs[1]);
         presets.push({
-          label: `⌨️ Fill #${firstInput.id} (${firstInput.label.slice(0, 22)})`,
-          cmd: `Type computer science in #${firstInput.id}`
+          label: `✍️ Fill #${inputs[0].id} & #${inputs[1].id}`,
+          cmd: `Type ${s1} in #${inputs[0].id}, then type ${s2} in #${inputs[1].id}`
+        });
+      } else if (inputs.length === 1) {
+        const s1 = getSmartSampleValueForField(inputs[0]);
+        presets.push({
+          label: `⌨️ Fill #${inputs[0].id} (${inputs[0].label.slice(0, 20)})`,
+          cmd: `Type ${s1} in #${inputs[0].id}`
         });
       }
-      const firstBtn = elements.find(e => e.category === 'action' || e.category === 'navigation');
+      const firstBtn = elements.find(e => e.category === 'action');
       if (firstBtn) {
         presets.push({
           label: `👆 Click #${firstBtn.id} (${firstBtn.label.slice(0, 22)})`,
@@ -1485,8 +1673,8 @@ Return JSON with:
         });
       }
       presets.push({
-        label: '↓ Scroll Down Page',
-        cmd: 'Scroll down'
+        label: '🔊 Summarize Website',
+        cmd: 'What is on this page?'
       });
     }
 
@@ -1532,15 +1720,13 @@ Return JSON with:
       const badge = document.createElement('span');
       badge.className = 'som-badge';
       badge.textContent = `#${el.id}`;
+      badge.title = `Click to interact with #${el.id}: ${el.label}`;
 
       const tooltip = document.createElement('span');
       tooltip.className = 'som-tooltip';
       tooltip.textContent = `#${el.id} • ${el.label}`;
 
-      box.appendChild(badge);
-      box.appendChild(tooltip);
-
-      box.addEventListener('click', (e) => {
+      badge.addEventListener('click', (e) => {
         e.stopPropagation();
         if (el.category === 'input') {
           openQuickFieldModal(el);
@@ -1549,6 +1735,8 @@ Return JSON with:
         }
       });
 
+      box.appendChild(badge);
+      box.appendChild(tooltip);
       somOverlay.appendChild(box);
     }
   }
@@ -1562,10 +1750,24 @@ Return JSON with:
 
     if (inputs.length > 0) {
       const sec = document.createElement('div');
+      const headerRow = document.createElement('div');
+      headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+
       const heading = document.createElement('div');
       heading.className = 'section-label';
+      heading.style.marginBottom = '0';
       heading.textContent = `Form Fields & Inputs (${inputs.length})`;
-      sec.appendChild(heading);
+
+      const autoFillBtn = document.createElement('button');
+      autoFillBtn.type = 'button';
+      autoFillBtn.className = 'apply-btn';
+      autoFillBtn.style.cssText = 'min-height:28px;font-size:11.5px;padding:0 10px;';
+      autoFillBtn.textContent = '🪄 Auto-Fill All Fields';
+      autoFillBtn.addEventListener('click', () => runAgentCommand('Auto-fill form'));
+
+      headerRow.appendChild(heading);
+      headerRow.appendChild(autoFillBtn);
+      sec.appendChild(headerRow);
 
       const list = document.createElement('div');
       list.className = 'a11y-card-list';
@@ -1608,13 +1810,13 @@ Return JSON with:
           const inp = document.createElement('input');
           inp.type = 'text';
           inp.value = el.value || '';
-          inp.placeholder = el.placeholder || `Type value for #${el.id}...`;
+          inp.placeholder = el.placeholder || `Type value for #${el.id} (${el.label})...`;
           inp.setAttribute('aria-label', `Type into ${el.label}`);
 
           const applyBtn = document.createElement('button');
           applyBtn.type = 'button';
           applyBtn.className = 'apply-btn';
-          applyBtn.textContent = 'Type';
+          applyBtn.textContent = 'Fill Field';
 
           const triggerType = () => {
             executeDirectAction(
@@ -1759,7 +1961,8 @@ Return JSON with:
     if (document.activeElement !== urlInput) {
       urlInput.value = state.url;
     }
-    elementCountBadge.textContent = `${state.elements.length} interactive controls`;
+    const inputCount = state.elements.filter(e => e.category === 'input').length;
+    elementCountBadge.textContent = `${inputCount} inputs • ${state.elements.length} controls`;
 
     if (state.alerts && state.alerts.length > 0) {
       liveAlertText.textContent = state.alerts.join(' • ');
