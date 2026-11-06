@@ -8,8 +8,9 @@
   let clientHistory = [];
   let navStack = ['/sites/clinic'];
   let currentSiteKey = '/sites/clinic';
+  let currentExternalUrl = null;
 
-  // Built-in Realistic Portals for Client-Side Live Browser Mode (GitHub Pages / Standalone)
+  // Built-in Realistic Portals
   const PORTAL_PAGES = {
     '/sites/clinic': {
       url: 'https://carebridge.a11y/sites/clinic',
@@ -483,6 +484,8 @@
   // DOM References
   const viewportStage = document.getElementById('viewport-stage');
   const viewportIframe = document.getElementById('viewport-iframe');
+  const viewportLoading = document.getElementById('viewport-loading');
+  const loadingUrlLabel = document.getElementById('loading-url-label');
   const screenshotImg = document.getElementById('viewport-screenshot');
   const somOverlay = document.getElementById('som-overlay');
   const agentCursor = document.getElementById('agent-cursor');
@@ -533,6 +536,16 @@
   }
   updateEngineBadge();
 
+  function setLoadingState(isLoading, urlText = '') {
+    if (!viewportLoading) return;
+    if (isLoading) {
+      if (loadingUrlLabel) loadingUrlLabel.textContent = urlText;
+      viewportLoading.classList.add('visible');
+    } else {
+      viewportLoading.classList.remove('visible');
+    }
+  }
+
   function speakText(text) {
     if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
     try {
@@ -582,15 +595,372 @@
   }
 
   // ============================================================================
-  // CLIENT-SIDE LIVE DOM ENGINE (Used on Public GitHub Pages & Standalone Mode)
+  // URL RESOLUTION & EXTERNAL WEBSITE PROXY ENGINE
+  // ============================================================================
+  function resolveNavigationTarget(rawInput) {
+    const str = String(rawInput || '').trim();
+    if (!str) return { type: 'portal', key: '/sites/clinic' };
+
+    if (str === '/sites/clinic' || str.includes('carebridge.a11y')) {
+      return { type: 'portal', key: '/sites/clinic' };
+    }
+    if (str === '/sites/grocery' || str.includes('freshmarket.a11y')) {
+      return { type: 'portal', key: '/sites/grocery' };
+    }
+    if (str === '/sites/civic' || str.includes('civicaccess.a11y')) {
+      return { type: 'portal', key: '/sites/civic' };
+    }
+
+    let url = str;
+    if (!/^https?:\/\//i.test(url)) {
+      // Check if it looks like a domain name (e.g., elearn.nou.edu.ng, wikipedia.org)
+      if (/^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(url)) {
+        url = 'https://' + url;
+      } else {
+        // Treat as a Wikipedia / DuckDuckGo accessible search
+        url = 'https://en.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(url);
+      }
+    }
+    return { type: 'external', url };
+  }
+
+  async function fetchWithTimeout(resource, options = {}, timeoutMs = 9500) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(resource, { ...options, signal: controller.signal });
+      return response;
+    } finally {
+      clearTimeout(id);
+    }
+  }
+
+  /**
+   * Converts cloud-rendered Markdown/Text from r.jina.ai into a rich, interactive,
+   * accessible HTML page with real clickable <a> links, search/login inputs, and headings
+   * when a target site blocks raw CORS HTML proxies.
+   */
+  function convertJinaReaderToInteractiveHtml(jinaText, targetUrl) {
+    const lines = jinaText.split('\n');
+    let pageTitle = targetUrl;
+    const bodyParts = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (line.startsWith('Title:')) {
+        pageTitle = line.replace(/^Title:\s*/, '').trim() || targetUrl;
+        continue;
+      }
+      if (line.startsWith('URL Source:') || line.startsWith('Markdown Content:')) continue;
+      if (!line) continue;
+
+      if (line.startsWith('# ')) {
+        bodyParts.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+      } else if (line.startsWith('## ')) {
+        bodyParts.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+      } else if (line.startsWith('### ')) {
+        bodyParts.push(`<h3>${escapeHtml(line.slice(4))}</h3>`);
+      } else {
+        // Parse markdown links [Label](URL) into real interactive <a> tags
+        const htmlLine = escapeHtml(line).replace(
+          /\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g,
+          (_, label, href) => {
+            const cleanLabel = label.replace(/!\[.*?\]\(.*?\)/g, '').trim() || href;
+            return `<a href="${href}" class="a11y-extracted-link">${cleanLabel}</a>`;
+          }
+        );
+        bodyParts.push(`<p>${htmlLine}</p>`);
+      }
+    }
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <base href="${escapeHtml(targetUrl)}" />
+  <title>${escapeHtml(pageTitle)}</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #f8fafc; color: #0f172a; margin: 0; padding: 24px 32px; line-height: 1.6; }
+    .site-bar { background: #0f172a; color: #fff; padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .site-bar h1 { font-size: 18px; margin: 0; color: #f8fafc; }
+    .site-search { display: flex; gap: 8px; }
+    .site-search input { padding: 8px 12px; border-radius: 6px; border: 1px solid #475569; font-size: 13px; min-width: 220px; }
+    .site-search button { padding: 8px 14px; border-radius: 6px; border: none; background: #f59e0b; color: #0f172a; font-weight: 700; cursor: pointer; }
+    h1, h2, h3 { color: #0f172a; margin: 16px 0 8px; }
+    p { margin: 8px 0; font-size: 14px; color: #334155; }
+    a.a11y-extracted-link, a {
+      display: inline-block;
+      margin: 3px 4px 3px 0;
+      padding: 5px 10px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #7dd3fc;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    a:hover { background: #bae6fd; }
+  </style>
+</head>
+<body>
+  <div class="site-bar">
+    <h1>${escapeHtml(pageTitle)}</h1>
+    <form class="site-search" onsubmit="event.preventDefault(); const q = document.getElementById('quick-page-filter').value.toLowerCase(); document.querySelectorAll('p, a').forEach(el => { el.style.display = (!q || el.innerText.toLowerCase().includes(q)) ? '' : 'none'; });">
+      <input type="text" id="quick-page-filter" aria-label="Filter links and content on this page" placeholder="Filter links or courses on page..." />
+      <button type="submit" id="quick-filter-btn">Filter Page</button>
+    </form>
+  </div>
+  <main>
+    ${bodyParts.join('\n')}
+  </main>
+</body>
+</html>`;
+  }
+
+  function sanitizeAndInjectBase(rawHtml, targetUrl) {
+    let html = String(rawHtml || '');
+    // Strip CSP and X-Frame-Options meta tags that could block assets or scripts inside srcdoc
+    html = html.replace(/<meta[^>]*http-equiv=["']?(?:Content-Security-Policy|X-Frame-Options)["']?[^>]*>/gi, '');
+
+    const baseTag = `<base href="${targetUrl}" />
+<style>
+  /* Ensure smooth scrolling and visible focus inside proxied external websites */
+  html { scroll-behavior: smooth; }
+  .__a11y_submitted_banner {
+    position: sticky; top: 0; z-index: 999999;
+    background: #065f46; color: #ecfdf5; padding: 12px 18px;
+    font-family: sans-serif; font-size: 14px; font-weight: 700;
+    border-bottom: 3px solid #10b981;
+  }
+</style>`;
+
+    if (/<head[^>]*>/i.test(html)) {
+      html = html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+    } else {
+      html = `<!DOCTYPE html><html><head>${baseTag}</head><body>${html}</body></html>`;
+    }
+    return html;
+  }
+
+  async function fetchExternalWebsiteHtml(targetUrl) {
+    // 1. Try AllOrigins JSON proxy (fast & preserves UTF-8 HTML)
+    try {
+      const res = await fetchWithTimeout(
+        `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+        {},
+        8500
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.contents && data.contents.length > 200 && /<[a-z][\s\S]*>/i.test(data.contents)) {
+          return sanitizeAndInjectBase(data.contents, targetUrl);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try CodeTabs Proxy
+    try {
+      const res = await fetchWithTimeout(
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+        {},
+        8500
+      );
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 200 && /<[a-z][\s\S]*>/i.test(text)) {
+          return sanitizeAndInjectBase(text, targetUrl);
+        }
+      }
+    } catch (_) {}
+
+    // 3. Try CorsProxy.io
+    try {
+      const res = await fetchWithTimeout(
+        `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
+        {},
+        8500
+      );
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 200 && /<[a-z][\s\S]*>/i.test(text)) {
+          return sanitizeAndInjectBase(text, targetUrl);
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fallback to Jina Cloud Headless Reader (handles sites with strict firewall / SPA rendering)
+    try {
+      const res = await fetchWithTimeout(`https://r.jina.ai/${targetUrl}`, {}, 12000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 80) {
+          return convertJinaReaderToInteractiveHtml(text, targetUrl);
+        }
+      }
+    } catch (_) {}
+
+    throw new Error(`Could not reach ${targetUrl} through public web proxies.`);
+  }
+
+  async function loadExternalWebsite(targetUrl, pushHistory = true) {
+    currentExternalUrl = targetUrl;
+    currentSiteKey = targetUrl;
+    if (pushHistory && navStack[navStack.length - 1] !== targetUrl) {
+      navStack.push(targetUrl);
+    }
+
+    urlInput.value = targetUrl;
+    setLoadingState(true, targetUrl);
+    setAgentAnnouncement(`Loading website ${targetUrl}...`, false);
+
+    viewportIframe.style.display = 'block';
+    screenshotImg.style.display = 'none';
+
+    try {
+      const rewrittenHtml = await fetchExternalWebsiteHtml(targetUrl);
+      const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
+      doc.open();
+      doc.write(rewrittenHtml);
+      doc.close();
+
+      const wireAndScan = () => {
+        wireExternalIframeInteractions(targetUrl);
+        const st = scanClientIframeDom();
+        if (st) {
+          setAgentAnnouncement(`Loaded "${st.title}" (${st.elements.length} interactive controls detected).`);
+        }
+      };
+
+      setTimeout(wireAndScan, 180);
+      setTimeout(() => {
+        wireExternalIframeInteractions(targetUrl);
+        scanClientIframeDom();
+      }, 900);
+      setTimeout(() => {
+        scanClientIframeDom();
+      }, 2000);
+    } catch (err) {
+      const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
+      doc.open();
+      doc.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unable to Load ${escapeHtml(targetUrl)}</title>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #0f172a; padding: 40px; max-width: 720px; margin: 0 auto; line-height: 1.6; }
+    .box { background: #fff; border: 2px solid #cbd5e1; border-radius: 12px; padding: 28px; }
+    h1 { font-size: 20px; margin-bottom: 10px; color: #b91c1c; }
+    .btn { display: inline-block; margin-top: 14px; padding: 10px 16px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 700; border: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="box" role="status" aria-live="polite">
+    <h1>Connection to ${escapeHtml(targetUrl)} Timed Out</h1>
+    <p>${escapeHtml(err.message)}</p>
+    <p style="margin-top:8px;font-size:14px;color:#475569;">You can retry loading the page or return to one of the accessible demo portals:</p>
+    <button type="button" class="btn" id="retry-ext-btn">Retry Loading ${escapeHtml(targetUrl)}</button>
+  </div>
+</body>
+</html>`);
+      doc.close();
+      setTimeout(() => {
+        const retryBtn = viewportIframe.contentDocument?.getElementById('retry-ext-btn');
+        if (retryBtn) {
+          retryBtn.addEventListener('click', () => loadExternalWebsite(targetUrl, false));
+        }
+        scanClientIframeDom();
+      }, 100);
+      setAgentAnnouncement(`Could not load ${targetUrl}: ${err.message}`);
+    } finally {
+      setLoadingState(false);
+    }
+  }
+
+  function wireExternalIframeInteractions(baseUrl) {
+    const doc = viewportIframe.contentDocument;
+    const win = viewportIframe.contentWindow;
+    if (!doc || !doc.body) return;
+
+    // Rescan DOM positions when the user scrolls inside the iframe
+    if (!win.__a11yScrollWired) {
+      win.__a11yScrollWired = true;
+      win.addEventListener('scroll', () => {
+        clearTimeout(win.__a11yScrollTimer);
+        win.__a11yScrollTimer = setTimeout(() => scanClientIframeDom(), 80);
+      }, { passive: true });
+    }
+
+    // Intercept all <a href="..."> clicks so navigation stays inside A11yPilot
+    doc.querySelectorAll('a[href]').forEach(a => {
+      if (a.__a11yWired) return;
+      a.__a11yWired = true;
+      a.addEventListener('click', (e) => {
+        const rawHref = a.getAttribute('href') || '';
+        if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
+        e.preventDefault();
+        try {
+          const resolved = new URL(rawHref, baseUrl).href;
+          loadExternalWebsite(resolved, true);
+        } catch (_) {}
+      });
+    });
+
+    // Intercept <form> submissions inside external websites
+    doc.querySelectorAll('form').forEach(form => {
+      if (form.__a11yWired) return;
+      form.__a11yWired = true;
+      form.addEventListener('submit', (e) => {
+        const method = (form.getAttribute('method') || 'GET').toUpperCase();
+        const actionAttr = form.getAttribute('action') || baseUrl;
+        const formData = new FormData(form);
+
+        if (method === 'GET') {
+          e.preventDefault();
+          try {
+            const target = new URL(actionAttr, baseUrl);
+            for (const [k, v] of formData.entries()) {
+              target.searchParams.set(k, String(v));
+            }
+            loadExternalWebsite(target.href, true);
+          } catch (_) {}
+        } else {
+          // For POST forms (like login forms on elearn.nou.edu.ng), display an accessible status banner
+          e.preventDefault();
+          const summaryPairs = [];
+          form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea').forEach(inp => {
+            const name = inp.name || inp.id || inp.type;
+            const val = inp.type === 'password' ? '••••••••' : inp.value;
+            if (val) summaryPairs.push(`${name}: ${val}`);
+          });
+          let banner = doc.querySelector('.__a11y_submitted_banner');
+          if (!banner) {
+            banner = doc.createElement('div');
+            banner.className = '__a11y_submitted_banner';
+            banner.setAttribute('role', 'status');
+            doc.body.prepend(banner);
+          }
+          banner.textContent = `✓ Form Submitted on ${new URL(baseUrl).hostname} (${summaryPairs.join(', ') || 'Submitted'})`;
+          scanClientIframeDom();
+        }
+      });
+    });
+  }
+
+  // ============================================================================
+  // CLIENT-SIDE LIVE DOM ENGINE (Portals & External Websites)
   // ============================================================================
   function loadClientPortal(siteKey, pushHistory = true) {
+    currentExternalUrl = null;
     const portal = PORTAL_PAGES[siteKey] || PORTAL_PAGES['/sites/clinic'];
     currentSiteKey = PORTAL_PAGES[siteKey] ? siteKey : '/sites/clinic';
     if (pushHistory && navStack[navStack.length - 1] !== currentSiteKey) {
       navStack.push(currentSiteKey);
     }
 
+    setLoadingState(false);
     viewportIframe.style.display = 'block';
     screenshotImg.style.display = 'none';
 
@@ -599,7 +969,6 @@
     doc.write(portal.html);
     doc.close();
 
-    // Wire internal nav links inside the iframe to switch portals seamlessly
     setTimeout(() => {
       const innerDoc = viewportIframe.contentDocument;
       if (innerDoc) {
@@ -639,8 +1008,10 @@
       if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
 
       if (el.id) {
-        const explicitLabel = doc.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-        if (explicitLabel && explicitLabel.innerText.trim()) return explicitLabel.innerText.trim();
+        try {
+          const explicitLabel = doc.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          if (explicitLabel && explicitLabel.innerText.trim()) return explicitLabel.innerText.trim();
+        } catch (_) {}
       }
 
       const parentLabel = el.closest('label');
@@ -652,7 +1023,10 @@
       const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
       if (text) return text.slice(0, 90);
 
-      return el.getAttribute('title') || el.id || el.tagName.toLowerCase();
+      const val = el.value;
+      if (val && typeof val === 'string' && val.trim()) return val.trim().slice(0, 60);
+
+      return el.getAttribute('title') || el.getAttribute('name') || el.id || el.tagName.toLowerCase();
     }
 
     function getCategory(tag, type, role) {
@@ -665,11 +1039,20 @@
 
     const win = viewportIframe.contentWindow;
     for (const el of candidates) {
-      const style = win.getComputedStyle(el);
+      if (elements.length >= 65) break; // Keep overlay clean & fast on huge portals
+      let style;
+      try {
+        style = win.getComputedStyle(el);
+      } catch (_) {
+        continue;
+      }
       if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) continue;
       const rect = el.getBoundingClientRect();
-      if (rect.width < 6 || rect.height < 6) continue;
-      if (rect.bottom < 0 || rect.top > win.innerHeight) continue;
+      if (rect.width < 8 || rect.height < 8) continue;
+      if (rect.bottom < 0 || rect.right < 0 || rect.top > win.innerHeight || rect.left > win.innerWidth) continue;
+
+      const label = getAccessibleLabel(el);
+      if (!label || label.length < 1) continue;
 
       const id = nextId++;
       el.setAttribute('data-a11y-id', String(id));
@@ -677,7 +1060,6 @@
       const tag = el.tagName.toLowerCase();
       const type = (el.getAttribute('type') || (tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text')).toLowerCase();
       const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag === 'select' ? 'combobox' : type === 'checkbox' ? 'checkbox' : 'textbox');
-      const label = getAccessibleLabel(el);
 
       let value = '';
       if (type === 'checkbox' || type === 'radio') {
@@ -711,7 +1093,7 @@
     }
 
     const alerts = [];
-    doc.querySelectorAll('[role="status"], [aria-live], .banner-success.visible, .order-msg.visible, .status-box.visible').forEach(node => {
+    doc.querySelectorAll('[role="status"], [aria-live], .banner-success.visible, .order-msg.visible, .status-box.visible, .__a11y_submitted_banner').forEach(node => {
       const s = win.getComputedStyle(node);
       if (s.display !== 'none' && s.visibility !== 'hidden') {
         const txt = (node.innerText || '').trim();
@@ -719,10 +1101,13 @@
       }
     });
 
-    const portalInfo = PORTAL_PAGES[currentSiteKey] || PORTAL_PAGES['/sites/clinic'];
+    const portalInfo = PORTAL_PAGES[currentSiteKey];
+    const activeUrl = currentExternalUrl || (portalInfo ? portalInfo.url : currentSiteKey);
+    const activeTitle = doc.title || (portalInfo ? portalInfo.title : activeUrl);
+
     const state = {
-      url: portalInfo.url,
-      title: doc.title || portalInfo.title,
+      url: activeUrl,
+      title: activeTitle,
       alerts,
       viewport: {
         width: viewportStage.clientWidth || 960,
@@ -736,7 +1121,7 @@
     return state;
   }
 
-  function performClientSingleAction(step) {
+  async function performClientSingleAction(step) {
     const doc = viewportIframe.contentDocument;
     const win = viewportIframe.contentWindow;
     const state = scanClientIframeDom();
@@ -744,31 +1129,50 @@
 
     const { action, elementId, value, direction } = step;
     const targetEl = elementId ? elements.find(e => e.id === Number(elementId)) : null;
-    const domNode = targetEl ? doc.querySelector(`[data-a11y-id="${targetEl.id}"]`) : null;
+    const domNode = targetEl && doc ? doc.querySelector(`[data-a11y-id="${targetEl.id}"]`) : null;
 
     let summary = '';
     if (action === 'navigate') {
-      const val = String(value || '');
-      if (val.includes('grocery')) loadClientPortal('/sites/grocery');
-      else if (val.includes('civic')) loadClientPortal('/sites/civic');
-      else loadClientPortal('/sites/clinic');
-      summary = `Navigated to ${val}`;
+      const resolved = resolveNavigationTarget(value);
+      if (resolved.type === 'portal') {
+        loadClientPortal(resolved.key, true);
+        summary = `Navigated to ${PORTAL_PAGES[resolved.key].title}`;
+      } else {
+        await loadExternalWebsite(resolved.url, true);
+        summary = `Navigated to ${resolved.url}`;
+      }
     } else if (action === 'back') {
       if (navStack.length > 1) {
         navStack.pop();
-        loadClientPortal(navStack[navStack.length - 1], false);
+        const prev = navStack[navStack.length - 1];
+        const resolved = resolveNavigationTarget(prev);
+        if (resolved.type === 'portal') loadClientPortal(resolved.key, false);
+        else await loadExternalWebsite(resolved.url, false);
       }
       summary = 'Navigated back';
     } else if (action === 'reload') {
-      loadClientPortal(currentSiteKey, false);
+      if (currentExternalUrl) {
+        await loadExternalWebsite(currentExternalUrl, false);
+      } else {
+        loadClientPortal(currentSiteKey, false);
+      }
       summary = 'Reloaded page';
     } else if (action === 'scroll') {
       const dir = (direction || value || 'down').toLowerCase();
-      win.scrollBy({ top: dir === 'up' ? -280 : 280, behavior: 'smooth' });
+      win.scrollBy({ top: dir === 'up' ? -300 : 300, behavior: 'smooth' });
+      await new Promise(r => setTimeout(r, 250));
       summary = `Scrolled page ${dir}`;
     } else if (action === 'click' && domNode) {
       if (domNode.hasAttribute('data-portal')) {
         loadClientPortal(domNode.getAttribute('data-portal'));
+      } else if (domNode.tagName.toLowerCase() === 'a' && domNode.getAttribute('href') && currentExternalUrl) {
+        const rawHref = domNode.getAttribute('href');
+        if (!rawHref.startsWith('#') && !rawHref.startsWith('javascript:')) {
+          const nextUrl = new URL(rawHref, currentExternalUrl).href;
+          await loadExternalWebsite(nextUrl, true);
+        } else {
+          domNode.click();
+        }
       } else {
         domNode.click();
       }
@@ -856,8 +1260,9 @@
     if (/^(what|describe|summarize|read|where am i|help|list)/.test(lower) && !/click|type|fill|select|book|add|order/.test(lower)) {
       const inputCount = elements.filter(e => e.category === 'input').length;
       const actionCount = elements.filter(e => e.category === 'action' || e.category === 'toggle').length;
+      const linkCount = elements.filter(e => e.category === 'navigation').length;
       const alertPart = state.alerts.length ? ` Active alert: ${state.alerts.join(' ')}` : '';
-      const summary = `You are on "${state.title}". There are ${elements.length} interactive controls: ${inputCount} form fields and ${actionCount} buttons or toggles.${alertPart}`;
+      const summary = `You are on "${state.title}". There are ${elements.length} visible controls: ${inputCount} inputs, ${actionCount} buttons, and ${linkCount} links.${alertPart}`;
       return {
         engine: 'A11yPilot Semantic DOM Grounding',
         spokenResponse: summary,
@@ -866,12 +1271,20 @@
     }
 
     const clauses = raw
-      .split(/\s*(?:;|,\s+and\s+|\s+then\s+|,\s*(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|switch|book|confirm|submit|add|place|request|enroll)\b)|\s+and\s+(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|switch|book|confirm|submit|add|place|request|enroll)\b))\s*/i)
+      .split(/\s*(?:;|,\s+and\s+|\s+then\s+|,\s*(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|add|place|request|enroll)\b)|\s+and\s+(?=(?:click|press|tap|type|enter|fill|set|select|choose|check|toggle|scroll|go|open|visit|navigate|switch|book|confirm|submit|add|place|request|enroll)\b))\s*/i)
       .map(c => c.trim())
       .filter(Boolean);
 
     for (const clause of clauses) {
       const cLow = clause.toLowerCase();
+
+      // Direct URL navigation command: "go to elearn.nou.edu.ng" or "open https://..."
+      const navMatch = clause.match(/^(?:go\s+to|navigate\s+to|open|visit|load)\s+(https?:\/\/\S+|[a-z0-9-]+(?:\.[a-z0-9-]+)+\S*)$/i);
+      if (navMatch) {
+        steps.push({ action: 'navigate', value: navMatch[1], explanation: `Navigate to ${navMatch[1]}` });
+        continue;
+      }
+
       if (/^scroll\s+(down|up)/i.test(cLow)) {
         const dir = cLow.match(/^scroll\s+(down|up)/i)[1];
         steps.push({ action: 'scroll', direction: dir, value: dir, explanation: `Scroll ${dir}` });
@@ -976,13 +1389,13 @@
     }).join('\n');
 
     const prompt = `You are A11yPilot, an accessibility browser agent.
-Page: "${state.title}"
+Page: "${state.title}" (${state.url})
 Interactive Elements (#1..#${state.elements.length}):
 ${elementLines}
 
 User Command: "${command}"
 Return JSON with:
-{ "spokenResponse": "...", "steps": [{ "action": "click"|"type"|"select"|"scroll"|"narrate", "elementId": 1, "value": "...", "explanation": "..." }] }`;
+{ "spokenResponse": "...", "steps": [{ "action": "click"|"type"|"select"|"scroll"|"navigate"|"narrate", "elementId": 1, "value": "...", "explanation": "..." }] }`;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -1008,7 +1421,7 @@ Return JSON with:
   // ============================================================================
   // UI RENDERING
   // ============================================================================
-  function renderPresetPrompts(url) {
+  function renderPresetPrompts(url, elements = []) {
     let presets = [];
     if (url.includes('/sites/grocery')) {
       presets = [
@@ -1036,7 +1449,7 @@ Return JSON with:
           cmd: 'Type UTIL-99201 in Utility Account Number, select Power Wheelchair Charging Station, and click Enroll in Medical Baseline Rate'
         }
       ];
-    } else {
+    } else if (url.includes('/sites/clinic')) {
       presets = [
         {
           label: '🩺 Auto-Fill & Confirm Maya Lin Booking',
@@ -1047,10 +1460,34 @@ Return JSON with:
           cmd: 'Click Select Dr. Amara Okafor, then select Telehealth Video Visit'
         },
         {
-          label: '🔊 Summarize Page Controls',
-          cmd: 'What is on this page?'
+          label: '🎓 Load elearn.nou.edu.ng',
+          cmd: 'Go to elearn.nou.edu.ng'
         }
       ];
+    } else {
+      // Dynamic presets generated from the live external website's actual elements!
+      presets.push({
+        label: '🔊 Summarize This Website',
+        cmd: 'What is on this page?'
+      });
+      const firstInput = elements.find(e => e.category === 'input');
+      if (firstInput) {
+        presets.push({
+          label: `⌨️ Fill #${firstInput.id} (${firstInput.label.slice(0, 22)})`,
+          cmd: `Type computer science in #${firstInput.id}`
+        });
+      }
+      const firstBtn = elements.find(e => e.category === 'action' || e.category === 'navigation');
+      if (firstBtn) {
+        presets.push({
+          label: `👆 Click #${firstBtn.id} (${firstBtn.label.slice(0, 22)})`,
+          cmd: `Click #${firstBtn.id}`
+        });
+      }
+      presets.push({
+        label: '↓ Scroll Down Page',
+        cmd: 'Scroll down'
+      });
     }
 
     presetPromptsContainer.innerHTML = '';
@@ -1310,7 +1747,6 @@ Return JSON with:
 
   function applyBrowserState(state) {
     if (!state) return;
-    const prevUrl = currentState ? currentState.url : '';
     currentState = state;
 
     if (usePlaywrightBackend && state.screenshot) {
@@ -1320,7 +1756,9 @@ Return JSON with:
     }
 
     livePageTitle.textContent = state.title || state.url;
-    urlInput.value = state.url;
+    if (document.activeElement !== urlInput) {
+      urlInput.value = state.url;
+    }
     elementCountBadge.textContent = `${state.elements.length} interactive controls`;
 
     if (state.alerts && state.alerts.length > 0) {
@@ -1330,10 +1768,7 @@ Return JSON with:
       liveAlertStrip.classList.remove('visible');
     }
 
-    if (state.url !== prevUrl) {
-      renderPresetPrompts(state.url);
-    }
-
+    renderPresetPrompts(state.url, state.elements);
     renderSomOverlay(state.elements);
     renderAccessibleDeck(state.elements);
     renderStepHistory(state.history);
@@ -1345,7 +1780,7 @@ Return JSON with:
     }
 
     if (!usePlaywrightBackend) {
-      const { record, state } = performClientSingleAction(payload);
+      const { record, state } = await performClientSingleAction(payload);
       const alertSuffix = state && state.alerts && state.alerts.length ? ` — ${state.alerts.join(' ')}` : '';
       setAgentAnnouncement(`${record.summary}${alertSuffix}`);
       return;
@@ -1394,7 +1829,7 @@ Return JSON with:
 
         for (const step of plan.steps) {
           if (step.action === 'narrate') continue;
-          const { record } = performClientSingleAction(step);
+          const { record } = await performClientSingleAction(step);
           if (record.rect) {
             moveAgentCursorToRect(record.rect, `${step.action.toUpperCase()} #${record.elementId || ''}`, 900);
             await new Promise(r => setTimeout(r, 380));
@@ -1403,7 +1838,7 @@ Return JSON with:
 
         const finalState = scanClientIframeDom();
         let spoken = plan.spokenResponse;
-        if (finalState.alerts && finalState.alerts.length > 0) {
+        if (finalState && finalState.alerts && finalState.alerts.length > 0) {
           spoken += ` Page alert: ${finalState.alerts.join(' ')}`;
         }
         setAgentAnnouncement(spoken);
@@ -1662,6 +2097,6 @@ Return JSON with:
       .replace(/"/g, '&quot;');
   }
 
-  // Initialize: start immediately in fast 60fps Client-Side Live DOM mode so it works on GitHub Pages and anywhere
+  // Initialize
   loadClientPortal('/sites/clinic');
 })();
