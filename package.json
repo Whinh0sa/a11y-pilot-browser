@@ -1,0 +1,13 @@
+{
+  "name": "a11y-pilot-browser",
+  "version": "1.0.0",
+  "description": "Accessible Agentic Browser with Playwright Headless Engine, Set-of-Mark Visual Overlay, and Gemini Multimodal Click/Type Assistant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.65.0"
+  }
+}

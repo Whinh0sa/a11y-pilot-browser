@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A11yPilot — Accessible Agentic Browser & Visual Click/Type Assistant</title>
+  <meta name="description" content="Accessible web browser with Set-of-Mark visual overlays and Gemini Multimodal AI click/type assistant for people with disabilities." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Browser & Accessibility Toolbar -->
+    <header class="top-bar" role="banner">
+      <div class="brand-cluster">
+        <div class="brand-mark" aria-hidden="true">A11y</div>
+        <div>
+          <span class="brand-title">A11yPilot Browser</span>
+          <span class="brand-subtitle">Visual Click &amp; Type Assistant for Accessibility</span>
+        </div>
+      </div>
+
+      <nav class="nav-cluster" aria-label="Browser Navigation">
+        <button type="button" id="btn-back" class="icon-btn" title="Navigate Back" aria-label="Navigate Back">
+          ← Back
+        </button>
+        <button type="button" id="btn-reload" class="icon-btn" title="Reload Page" aria-label="Reload Page">
+          ↻ Reload
+        </button>
+
+        <form id="url-form" class="url-form" aria-label="Address Bar">
+          <input
+            type="text"
+            id="url-input"
+            class="url-input"
+            aria-label="Website URL"
+            placeholder="Enter URL or choose an accessible portal..."
+            value="https://carebridge.a11y/sites/clinic"
+          />
+          <button type="submit" id="btn-go" class="icon-btn">Go</button>
+        </form>
+
+        <div class="site-switcher" role="group" aria-label="Demo Portals">
+          <button type="button" class="preset-site-btn active" data-site="/sites/clinic" id="preset-clinic">
+            🏥 Clinic Portal
+          </button>
+          <button type="button" class="preset-site-btn" data-site="/sites/grocery" id="preset-grocery">
+            🛒 Grocery Store
+          </button>
+          <button type="button" class="preset-site-btn" data-site="/sites/civic" id="preset-civic">
+            🚐 Civic Paratransit
+          </button>
+        </div>
+      </nav>
+
+      <div class="a11y-toolbar" role="toolbar" aria-label="Accessibility Preferences">
+        <button type="button" id="toggle-badges-btn" class="icon-btn active" aria-pressed="true" title="Toggle Set-of-Mark Number Badges (#1..#N)">
+          # Badges: ON
+        </button>
+        <button type="button" id="toggle-tts-btn" class="icon-btn" aria-pressed="false" title="Toggle Spoken Narration (Text-to-Speech)">
+          🔊 Voice Readout: OFF
+        </button>
+        <button type="button" id="toggle-contrast-btn" class="icon-btn" aria-pressed="false" title="Toggle WCAG AAA High-Contrast Mode">
+          ◐ High Contrast
+        </button>
+        <button type="button" id="toggle-large-text-btn" class="icon-btn" aria-pressed="false" title="Toggle Larger Interface Text">
+          A+ Large Text
+        </button>
+        <button type="button" id="open-gemini-modal-btn" class="icon-btn" title="Configure Gemini API Key">
+          ✦ Gemini Key
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Split Workspace -->
+    <main class="workspace">
+      <!-- Left: Live Browser Stage + Interactive Visual Overlay -->
+      <section class="browser-column" aria-label="Live Webpage Viewport">
+        <div class="stage-header">
+          <div class="page-meta">
+            <span class="live-dot" aria-hidden="true"></span>
+            <h1 id="live-page-title" class="page-title-label">CareBridge Health — Patient Appointment Portal</h1>
+            <span id="element-count-badge" class="element-counter">17 interactive controls</span>
+          </div>
+
+          <div class="scroll-controls" role="group" aria-label="Page Scroll Controls">
+            <button type="button" id="scroll-up-btn" class="icon-btn" aria-label="Scroll Page Up">↑ Scroll Up</button>
+            <button type="button" id="scroll-down-btn" class="icon-btn" aria-label="Scroll Page Down">↓ Scroll Down</button>
+          </div>
+        </div>
+
+        <!-- Live Page Status Alert Strip -->
+        <div id="live-alert-strip" class="live-alert-strip" role="status" aria-live="polite">
+          <span id="live-alert-text"></span>
+        </div>
+
+        <!-- Live Viewport Stage with Pixel-Aligned Set-of-Mark Overlay -->
+        <div class="viewport-frame-outer">
+          <div id="viewport-stage" class="viewport-stage">
+            <iframe
+              id="viewport-iframe"
+              class="viewport-iframe"
+              title="Live Embedded Browser Viewport"
+            ></iframe>
+            <img
+              id="viewport-screenshot"
+              class="viewport-screenshot"
+              alt="Live rendered webpage"
+              src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+            />
+            <!-- Interactive Set-of-Mark Overlay -->
+            <div id="som-overlay" class="som-overlay" aria-label="Interactive Element Overlay"></div>
+
+            <!-- Visual Agent Animated Pointer -->
+            <div id="agent-cursor" class="agent-cursor" aria-hidden="true">
+              <span id="agent-cursor-label" class="agent-cursor-label">Clicking #1</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Visual Click/Type Assistant & Accessible Action Deck -->
+      <aside class="assistant-column" aria-label="AI Visual Click/Type Assistant">
+        <div class="agent-command-card">
+          <div class="agent-header-row">
+            <div class="agent-title">
+              <span>Visual Click &amp; Type Assistant</span>
+            </div>
+            <span id="active-engine-badge" class="engine-tag">Semantic Grounding Ready</span>
+          </div>
+
+          <form id="agent-command-form" class="command-input-group">
+            <input
+              type="text"
+              id="agent-command-input"
+              class="command-input"
+              aria-label="Tell the agent what to click, type, or select"
+              placeholder="e.g. &quot;Type Maya Lin in Patient Name, check Wheelchair, and click Confirm&quot; or &quot;Click #4&quot;"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              id="voice-mic-btn"
+              class="voice-btn"
+              title="Speak Command (Push-to-Talk)"
+              aria-label="Speak Command via Microphone"
+            >
+              🎤
+            </button>
+            <button type="submit" id="run-agent-btn" class="run-agent-btn">
+              Run Agent
+            </button>
+          </form>
+
+          <div id="preset-prompts-container" class="preset-prompts" aria-label="Suggested One-Click Agent Commands"></div>
+        </div>
+
+        <!-- Spoken / Text Agent Feedback -->
+        <div class="agent-speech-box" role="status" aria-live="polite">
+          <span class="speech-icon" aria-hidden="true">✦</span>
+          <div id="agent-speech-text">
+            Ready! Click any numbered badge on the webpage, use the simplified controls below, or tell the agent what to fill and click.
+          </div>
+        </div>
+
+        <!-- Tabs: Accessible Action Deck vs. Visual Agent Step Log -->
+        <div class="deck-tabs" role="tablist">
+          <button
+            type="button"
+            id="tab-deck-btn"
+            class="deck-tab active"
+            role="tab"
+            aria-selected="true"
+          >
+            Accessible Action Deck
+          </button>
+          <button
+            type="button"
+            id="tab-history-btn"
+            class="deck-tab"
+            role="tab"
+            aria-selected="false"
+          >
+            Agent Visual Trace (<span id="trace-count">0</span>)
+          </button>
+        </div>
+
+        <!-- Tab 1: Simplified Accessible Controls Deck -->
+        <div id="deck-panel-controls" class="deck-body" role="tabpanel"></div>
+
+        <!-- Tab 2: Agent Step Log -->
+        <div id="deck-panel-history" class="deck-body" role="tabpanel" style="display: none;">
+          <div class="section-label">Executed Visual Actions</div>
+          <div id="step-log-list" class="step-log-list"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Quick-Type Modal when clicking an Input/Select directly on the Live Viewport -->
+  <div id="quick-field-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="quick-field-title">
+    <div class="modal-card">
+      <h2 id="quick-field-title">Type into Field</h2>
+      <p id="quick-field-subtitle">Enter the text or choose an option for this webpage field:</p>
+      <div id="quick-field-input-container"></div>
+      <div class="modal-actions">
+        <button type="button" id="quick-field-cancel" class="icon-btn">Cancel</button>
+        <button type="button" id="quick-field-submit" class="run-agent-btn" style="height:36px;">Apply to Page</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gemini API Key Configuration Modal -->
+  <div id="gemini-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="gemini-modal-title">
+    <div class="modal-card">
+      <h2 id="gemini-modal-title">Configure Gemini Multimodal API</h2>
+      <p>
+        A11yPilot includes a built-in <strong>Semantic DOM Grounding Engine</strong> that works out-of-the-box. Paste a Gemini API key below to enable live <strong>Gemini 2.5 Flash</strong> planning directly from your browser.
+      </p>
+      <input
+        type="password"
+        id="gemini-key-input"
+        class="modal-input"
+        placeholder="AIzaSy..."
+        aria-label="Gemini API Key"
+      />
+      <div class="modal-actions">
+        <button type="button" id="gemini-modal-close" class="icon-btn">Cancel</button>
+        <button type="button" id="gemini-modal-save" class="run-agent-btn" style="height:36px;">Save API Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
