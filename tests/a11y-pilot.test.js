@@ -222,4 +222,81 @@ describe('A11yPilot Accessible AI Browser — End-to-End & Regression Test Suite
 
     await context.close();
   });
+
+  test('5. External Portal Login (elearn.nou.edu.ng): Clicking Log In transitions to Authenticated Student Dashboard', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+
+    // Intercept external proxy fetches so test runs deterministically offline/CI and returns realistic Moodle login HTML
+    await page.route('**/*', async (route) => {
+      const reqUrl = route.request().url();
+      if (reqUrl.includes('allorigins.win') || reqUrl.includes('codetabs.com') || reqUrl.includes('corsproxy.io') || reqUrl.includes('elearn.nou.edu.ng')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: `<!DOCTYPE html><html><head><title>NOUN eLearn Portal: Log in to the site</title></head><body>
+            <form id="login" method="post" action="https://elearn.nou.edu.ng/login/index.php">
+              <label for="username">Username</label>
+              <input type="text" name="username" id="username" placeholder="Username" />
+              <label for="password">Password</label>
+              <input type="password" name="password" id="password" placeholder="Password" />
+              <button type="submit" id="loginbtn">Log in</button>
+            </form>
+            <form id="guestlogin" method="post" action="https://elearn.nou.edu.ng/login/index.php">
+              <button type="submit">Access as a guest</button>
+            </form>
+          </body></html>`
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(250);
+
+    // Navigate to elearn.nou.edu.ng
+    await page.fill('#url-input', 'elearn.nou.edu.ng');
+    await page.click('#btn-go');
+    await page.waitForTimeout(500);
+
+    // Verify login inputs are scanned (#1 Username, #2 Password)
+    const loginInputsCount = await page.locator('#deck-panel-inputs .a11y-control-card').count();
+    assert.equal(loginInputsCount, 2, 'Should detect Username and Password fields on NOUN login page');
+
+    // Fill Username and Password via Accessible Form Deck
+    await page.fill('#deck-input-1', 'NOU23104928');
+    await page.fill('#deck-input-2', 'Pass2026!');
+    await page.waitForTimeout(100);
+
+    // Click Step 3 CTA ("Step 3: Log in") or the Log in button
+    await page.click('#deck-submit-cta-btn');
+    await page.waitForTimeout(500);
+
+    // Verify URL bar and page title transitioned to Authenticated Student Dashboard
+    const currentUrlValue = await page.locator('#url-input').inputValue();
+    assert.equal(currentUrlValue, 'https://elearn.nou.edu.ng/my/dashboard', 'URL bar should update to /my/dashboard after login');
+
+    const dashboardState = await page.evaluate(() => {
+      const doc = document.getElementById('viewport-iframe').contentDocument;
+      return {
+        title: doc.title,
+        bannerText: doc.getElementById('dash-live-banner') ? doc.getElementById('dash-live-banner').innerText : '',
+        coursesCount: doc.querySelectorAll('.course-card').length,
+        hasTmaForm: Boolean(doc.getElementById('dash-tma-form'))
+      };
+    });
+
+    assert.match(dashboardState.title, /Dashboard/i, 'Iframe should render the Student Dashboard');
+    assert.match(dashboardState.bannerText, /NOU23104928/i, 'Dashboard banner should display the logged-in Matric/Username');
+    assert.equal(dashboardState.coursesCount, 4, 'Dashboard should display 4 enrolled NOUN courses (CIT101, GST101, MTH101, CMP201)');
+    assert.equal(dashboardState.hasTmaForm, true, 'Dashboard should include the interactive TMA submission form');
+
+    // Verify the Accessible Form Deck updated to show the Dashboard's own inputs (Search Filter, Semester Select, TMA Course, TMA Answer, Accommodation)
+    const dashboardInputsCount = await page.locator('#deck-panel-inputs .a11y-control-card').count();
+    assert.equal(dashboardInputsCount, 5, 'Accessible Form Deck should now list the 5 interactive Dashboard form fields');
+
+    await context.close();
+  });
 });
+

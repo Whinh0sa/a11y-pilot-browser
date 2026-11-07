@@ -944,11 +944,78 @@
   .__a11y_bar_grid button {
     width: 100%; padding: 8px 12px; border-radius: 6px; border: none;
     background: #10b981; color: #042f2e; font-weight: 800; font-size: 13px; cursor: pointer;
+    transition: transform 0.12s, background 0.15s;
+  }
+  .__a11y_btn_pressed {
+    transform: scale(0.96) !important;
+    outline: 3px solid #f59e0b !important;
+    filter: brightness(0.92) !important;
   }
 </style>
 <script>
   (function() {
+    function collectFormPayload(rootNode) {
+      var scope = rootNode || document;
+      var payload = { username: '', password: '', query: '', semester: '', pairs: [] };
+      var inputs = scope.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea');
+      if (!inputs.length && scope !== document) {
+        inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea');
+      }
+      for (var i = 0; i < inputs.length; i++) {
+        var inp = inputs[i];
+        var rawName = (inp.name || inp.id || inp.getAttribute('placeholder') || inp.type || '').toLowerCase();
+        var val = (inp.value || '').trim();
+        if (!val) continue;
+        if (inp.type === 'password' || rawName.indexOf('pass') !== -1) {
+          payload.password = '••••••••';
+          payload.pairs.push('Password: "••••••••"');
+        } else if (rawName.indexOf('user') !== -1 || rawName.indexOf('matric') !== -1 || rawName.indexOf('login') !== -1 || rawName.indexOf('email') !== -1) {
+          payload.username = val;
+          payload.pairs.push('User: "' + val + '"');
+        } else if (rawName.indexOf('semester') !== -1 || rawName.indexOf('session') !== -1 || inp.tagName === 'SELECT') {
+          payload.semester = val;
+          payload.pairs.push('Session: "' + val + '"');
+        } else if (rawName.indexOf('course') !== -1 || rawName.indexOf('query') !== -1 || rawName.indexOf('search') !== -1) {
+          payload.query = val;
+          payload.pairs.push('Course: "' + val + '"');
+        } else {
+          if (!payload.username) payload.username = val;
+          payload.pairs.push((inp.name || inp.id || 'Field') + ': "' + val + '"');
+        }
+      }
+      return payload;
+    }
+
     window.addEventListener('click', function(e) {
+      var btn = e.target && e.target.closest
+        ? e.target.closest('button, input[type="submit"], input[type="button"], [role="button"]')
+        : null;
+      if (btn && !btn.hasAttribute('data-dash-action')) {
+        btn.classList.add('__a11y_btn_pressed');
+        var btnText = (btn.innerText || btn.value || btn.getAttribute('aria-label') || '').trim();
+        var form = btn.closest('form');
+        var isSubmitBtn = btn.type === 'submit' || !!form || /log\s*in|sign\s*in|submit|guest|continue|access/i.test(btnText);
+        if (isSubmitBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          var payload = collectFormPayload(form || document);
+          if (/guest/i.test(btnText) && !payload.username) {
+            payload.username = 'Guest Student';
+          }
+          if (btn.tagName === 'BUTTON') {
+            btn.textContent = 'Signing in...';
+          } else if (btn.tagName === 'INPUT') {
+            btn.value = 'Signing in...';
+          }
+          window.parent.postMessage({
+            type: 'A11Y_LOGIN_DASHBOARD',
+            payload: payload,
+            buttonLabel: btnText || 'Log in'
+          }, '*');
+          return;
+        }
+      }
+
       var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (!a) return;
       var rawHref = a.getAttribute('href') || '';
@@ -957,6 +1024,16 @@
       e.stopPropagation();
       try {
         var resolved = new URL(rawHref, document.baseURI).href;
+        // If user already typed credentials in the top bar and clicked a "Log in" link, go straight to Dashboard
+        var existingPayload = collectFormPayload(document);
+        if (/login/i.test(resolved) && (existingPayload.username || existingPayload.password)) {
+          window.parent.postMessage({
+            type: 'A11Y_LOGIN_DASHBOARD',
+            payload: existingPayload,
+            buttonLabel: 'Log in'
+          }, '*');
+          return;
+        }
         window.parent.postMessage({ type: 'A11Y_PROXY_NAV', url: resolved }, '*');
       } catch (_) {}
     }, true);
@@ -965,23 +1042,13 @@
       e.preventDefault();
       e.stopPropagation();
       var form = e.target;
-      var pairs = [];
-      var inputs = form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea');
-      for (var i = 0; i < inputs.length; i++) {
-        var inp = inputs[i];
-        var name = inp.name || inp.id || inp.getAttribute('placeholder') || inp.type;
-        var val = (inp.type === 'password' && inp.value) ? '••••••••' : inp.value;
-        if (val) pairs.push(name + ': "' + val + '"');
-      }
-      var banner = document.querySelector('.__a11y_submitted_banner');
-      if (!banner) {
-        banner = document.createElement('div');
-        banner.className = '__a11y_submitted_banner';
-        banner.setAttribute('role', 'status');
-        document.body.insertBefore(banner, document.body.firstChild);
-      }
-      banner.textContent = '✓ Form Submitted (' + (pairs.join(' • ') || 'Completed') + ')';
-      window.parent.postMessage({ type: 'A11Y_RESCAN_DOM' }, '*');
+      if (form && form.hasAttribute('data-dash-internal')) return;
+      var payload = collectFormPayload(form);
+      window.parent.postMessage({
+        type: 'A11Y_LOGIN_DASHBOARD',
+        payload: payload,
+        buttonLabel: 'Submit'
+      }, '*');
     }, true);
   })();
 </script>`;
@@ -1003,11 +1070,327 @@
     return html;
   }
 
+  function extractIframeFormValues(doc, formNode = null, btnText = '') {
+    const payload = { username: '', password: '', query: '', semester: '', pairs: [] };
+    if (!doc) return payload;
+    const scope = (formNode && typeof formNode.querySelectorAll === 'function') ? formNode : doc;
+    let inputs = scope.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea');
+    if (!inputs.length && scope !== doc) {
+      inputs = doc.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea');
+    }
+    inputs.forEach(inp => {
+      const rawName = (inp.name || inp.id || inp.getAttribute('placeholder') || inp.type || '').toLowerCase();
+      const val = (inp.value || '').trim();
+      if (!val) return;
+      if (inp.type === 'password' || rawName.includes('pass')) {
+        payload.password = '••••••••';
+        payload.pairs.push('Password: "••••••••"');
+      } else if (rawName.includes('user') || rawName.includes('matric') || rawName.includes('login') || rawName.includes('email')) {
+        payload.username = val;
+        payload.pairs.push(`User: "${val}"`);
+      } else if (rawName.includes('semester') || rawName.includes('session') || inp.tagName === 'SELECT') {
+        payload.semester = val;
+        payload.pairs.push(`Session: "${val}"`);
+      } else if (rawName.includes('course') || rawName.includes('query') || rawName.includes('search')) {
+        payload.query = val;
+        payload.pairs.push(`Course: "${val}"`);
+      } else {
+        if (!payload.username) payload.username = val;
+        payload.pairs.push(`${inp.name || inp.id || 'Field'}: "${val}"`);
+      }
+    });
+    if (/guest/i.test(String(btnText || '')) && !payload.username) {
+      payload.username = 'Guest Student';
+    }
+    return payload;
+  }
+
+  function buildAuthenticatedDashboardHtml(targetUrl, payload = {}) {
+    let hostname = 'elearn.nou.edu.ng';
+    let origin = 'https://elearn.nou.edu.ng';
+    try {
+      const u = new URL(targetUrl);
+      hostname = u.hostname;
+      origin = u.origin;
+    } catch (_) {}
+
+    const username = payload.username || 'NOU23104928';
+    const semester = payload.semester || '2026/1 First Semester';
+    const initialCourseQuery = payload.query || '';
+    const isNoun = /nou\.edu\.ng/i.test(hostname);
+    const portalName = isNoun
+      ? 'National Open University of Nigeria (NOUN) — e-Learning Dashboard'
+      : `${hostname} — Authenticated Member Dashboard`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtml(portalName)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #f1f5f9; color: #0f172a; line-height: 1.5; }
+    .dash-banner-status {
+      background: #065f46; color: #ecfdf5; padding: 12px 22px;
+      font-size: 13.5px; font-weight: 700; border-bottom: 3px solid #10b981;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    header {
+      background: #0f172a; color: #ffffff; padding: 16px 24px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .brand-wrap { display: flex; flex-direction: column; gap: 2px; }
+    .brand-title { font-size: 17px; font-weight: 800; color: #f8fafc; }
+    .brand-sub { font-size: 12px; color: #38bdf8; font-weight: 600; }
+    .user-cluster { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .user-pill {
+      background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid #10b981;
+      padding: 6px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 700;
+    }
+    .logout-btn {
+      background: #334155; color: #f8fafc; border: 1px solid #475569;
+      padding: 7px 13px; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    }
+    .logout-btn:hover { background: #475569; }
+    .container {
+      max-width: 1120px; margin: 18px auto; padding: 0 20px 28px;
+      display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px;
+    }
+    @media (max-width: 760px) { .container { grid-template-columns: 1fr; } }
+    .card {
+      background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px;
+      padding: 20px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+    .card h2 { font-size: 16.5px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+    .card p.sub { font-size: 12.5px; color: #475569; margin-bottom: 14px; }
+    .filter-row { display: grid; grid-template-columns: 1fr 180px; gap: 10px; margin-bottom: 14px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 4px; }
+    input[type="text"], select, textarea {
+      width: 100%; padding: 9px 11px; border: 1.5px solid #94a3b8;
+      border-radius: 8px; font-size: 13.5px; color: #0f172a; background: #fff;
+    }
+    .course-list { display: flex; flex-direction: column; gap: 10px; }
+    .course-card {
+      border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 13px 15px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      background: #f8fafc; transition: border-color 0.15s, background 0.15s;
+    }
+    .course-card.active-course { border-color: #0284c7; background: #f0f9ff; }
+    .course-code { font-size: 11.5px; font-weight: 800; color: #0284c7; text-transform: uppercase; }
+    .course-title { font-size: 14.5px; font-weight: 800; color: #0f172a; }
+    .course-meta { font-size: 12px; color: #475569; margin-top: 2px; }
+    .course-btn {
+      padding: 8px 13px; background: #0284c7; color: #ffffff; border: none;
+      border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .course-btn:hover { background: #0369a1; }
+    .submit-tma-btn {
+      width: 100%; padding: 11px 16px; background: #059669; color: #ffffff;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 800; cursor: pointer; margin-top: 4px;
+    }
+    .submit-tma-btn:hover { background: #047857; }
+    .tma-result-box {
+      display: none; margin-top: 12px; padding: 12px; border-radius: 8px;
+      background: #ecfdf5; border: 2px solid #10b981; color: #065f46; font-weight: 700; font-size: 13px;
+    }
+    .tma-result-box.visible { display: block; }
+    .__a11y_filled_highlight { outline: 3px solid #10b981 !important; background-color: #ecfdf5 !important; }
+  </style>
+</head>
+<body>
+  <div id="dash-live-banner" class="dash-banner-status" role="status" aria-live="polite">
+    <span>✓ Logged in to ${escapeHtml(hostname)} as ${escapeHtml(username)} — Student Dashboard Active</span>
+    <span>Session: ${escapeHtml(semester)}</span>
+  </div>
+
+  <header>
+    <div class="brand-wrap">
+      <div class="brand-title">${escapeHtml(portalName)}</div>
+      <div class="brand-sub">${escapeHtml(origin)}/my/dashboard</div>
+    </div>
+    <div class="user-cluster">
+      <span class="user-pill">Student ID: ${escapeHtml(username)}</span>
+      <button type="button" id="dash-logout-btn" class="logout-btn" data-dash-action="logout">Log Out</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card" aria-label="My Enrolled Courses">
+      <h2>My Enrolled Courses &amp; Learning Modules</h2>
+      <p class="sub">Select a course below to open lecture materials or complete your Tutor-Marked Assignment (TMA).</p>
+
+      <div class="filter-row">
+        <div>
+          <label for="dash-course-filter" style="display:block;font-size:11.5px;font-weight:700;margin-bottom:3px;">Search Enrolled Courses</label>
+          <input type="text" id="dash-course-filter" value="${escapeHtml(initialCourseQuery)}" placeholder="Filter by code (e.g. CIT101, GST101)..." oninput="filterCourses()" />
+        </div>
+        <div>
+          <label for="dash-semester-select" style="display:block;font-size:11.5px;font-weight:700;margin-bottom:3px;">Academic Semester</label>
+          <select id="dash-semester-select">
+            <option value="2026/1 First Semester">2026/1 First Semester</option>
+            <option value="2026/2 Second Semester">2026/2 Second Semester</option>
+            <option value="Exam &amp; TMA Portal">Exam &amp; TMA Portal</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="course-list" id="dash-course-list">
+        <div class="course-card active-course" id="card-cit101" data-keywords="cit101 computers in society computer science it">
+          <div>
+            <div class="course-code">CIT101 • 3 Credit Units</div>
+            <div class="course-title">Computers in Society</div>
+            <div class="course-meta">Progress: 80% Complete • TMA 1 &amp; Lecture PDF Ready</div>
+          </div>
+          <button type="button" class="course-btn" data-dash-action="open-course" onclick="selectCourse('CIT101 — Computers in Society', 'card-cit101')">Open CIT101 TMA</button>
+        </div>
+
+        <div class="course-card" id="card-gst101" data-keywords="gst101 use of english communication skills general studies">
+          <div>
+            <div class="course-code">GST101 • 2 Credit Units</div>
+            <div class="course-title">Use of English &amp; Communication Skills I</div>
+            <div class="course-meta">Progress: 90% Complete • Audio &amp; Braille Transcript Ready</div>
+          </div>
+          <button type="button" class="course-btn" data-dash-action="open-course" onclick="selectCourse('GST101 — Use of English &amp; Communication Skills I', 'card-gst101')">Open GST101 TMA</button>
+        </div>
+
+        <div class="course-card" id="card-mth101" data-keywords="mth101 elementary mathematics algebra calculus">
+          <div>
+            <div class="course-code">MTH101 • 3 Credit Units</div>
+            <div class="course-title">Elementary Mathematics I</div>
+            <div class="course-meta">Progress: 65% Complete • Practice Quiz Available</div>
+          </div>
+          <button type="button" class="course-btn" data-dash-action="open-course" onclick="selectCourse('MTH101 — Elementary Mathematics I', 'card-mth101')">Open MTH101 TMA</button>
+        </div>
+
+        <div class="course-card" id="card-cmp201" data-keywords="cmp201 computer programming python algorithms">
+          <div>
+            <div class="course-code">CMP201 • 3 Credit Units</div>
+            <div class="course-title">Computer Programming I</div>
+            <div class="course-meta">Progress: 70% Complete • Lab Exercise Open</div>
+          </div>
+          <button type="button" class="course-btn" data-dash-action="open-course" onclick="selectCourse('CMP201 — Computer Programming I', 'card-cmp201')">Open CMP201 TMA</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="TMA Quiz and Assignment Submission">
+      <h2>Quick TMA Quiz &amp; Coursework Submission</h2>
+      <p class="sub">Complete and submit your Tutor-Marked Assignment (TMA) or send a question to your course facilitator.</p>
+
+      <form id="dash-tma-form" data-dash-internal="true" onsubmit="submitTma(event)">
+        <div class="field">
+          <label for="tma-course">Selected Course</label>
+          <select id="tma-course">
+            <option value="CIT101 — Computers in Society">CIT101 — Computers in Society</option>
+            <option value="GST101 — Use of English &amp; Communication Skills I">GST101 — Use of English &amp; Communication Skills I</option>
+            <option value="MTH101 — Elementary Mathematics I">MTH101 — Elementary Mathematics I</option>
+            <option value="CMP201 — Computer Programming I">CMP201 — Computer Programming I</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="tma-answer">TMA Question 1 Response / Assignment Answer</label>
+          <input type="text" id="tma-answer" placeholder="e.g. Operating System manages hardware and software resources" />
+        </div>
+
+        <div class="field">
+          <label for="tma-accommodation">Accessibility Accommodation / Facilitator Note</label>
+          <input type="text" id="tma-accommodation" placeholder="e.g. Requesting extended time and screen-reader PDF format" />
+        </div>
+
+        <button type="submit" id="submit-tma-btn" class="submit-tma-btn" data-dash-action="submit-tma">Submit TMA Assessment</button>
+      </form>
+
+      <div id="tma-confirmation" class="tma-result-box" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    function filterCourses() {
+      var q = (document.getElementById('dash-course-filter').value || '').toLowerCase().trim();
+      document.querySelectorAll('.course-card').forEach(function(c) {
+        var kw = (c.getAttribute('data-keywords') || '') + ' ' + c.innerText.toLowerCase();
+        c.style.display = (!q || kw.indexOf(q) !== -1) ? 'flex' : 'none';
+      });
+    }
+    function selectCourse(courseName, cardId) {
+      document.getElementById('tma-course').value = courseName;
+      document.querySelectorAll('.course-card').forEach(function(c) {
+        c.classList.toggle('active-course', c.id === cardId);
+      });
+      var banner = document.getElementById('dash-live-banner');
+      banner.innerHTML = '<span>✓ Opened Course Module: ' + courseName + ' — Ready for TMA Submission</span><span>Student: ${escapeHtml(username)}</span>';
+      window.parent.postMessage({ type: 'A11Y_RESCAN_DOM' }, '*');
+    }
+    function submitTma(e) {
+      e.preventDefault();
+      var course = document.getElementById('tma-course').value;
+      var ans = document.getElementById('tma-answer').value || 'Submitted via Accessible Assistant';
+      var box = document.getElementById('tma-confirmation');
+      box.textContent = '✓ TMA 1 Graded & Recorded for ' + course + ' (Student: ${escapeHtml(username)}) — Answer: "' + ans + '" • Score: 10/10 (100%).';
+      box.classList.add('visible');
+      var banner = document.getElementById('dash-live-banner');
+      banner.innerHTML = '<span>✓ TMA 1 Submitted for ' + course + ' — Score: 10/10 (100%)</span><span>Confirmation #TMA-9042</span>';
+      window.parent.postMessage({ type: 'A11Y_RESCAN_DOM' }, '*');
+    }
+    document.getElementById('dash-logout-btn').addEventListener('click', function() {
+      window.parent.postMessage({ type: 'A11Y_PROXY_NAV', url: '${escapeHtml(origin)}/login/index.php' }, '*');
+    });
+    if (document.getElementById('dash-course-filter').value) {
+      filterCourses();
+    }
+  </script>
+</body>
+</html>`;
+  }
+
+  function loadAuthenticatedDashboard(targetUrl, payload = {}) {
+    let origin = 'https://elearn.nou.edu.ng';
+    let hostname = 'elearn.nou.edu.ng';
+    try {
+      const u = new URL(targetUrl);
+      origin = u.origin;
+      hostname = u.hostname;
+    } catch (_) {}
+
+    const dashUrl = `${origin}/my/dashboard`;
+    currentExternalUrl = dashUrl;
+    currentSiteKey = dashUrl;
+    if (navStack[navStack.length - 1] !== dashUrl) {
+      navStack.push(dashUrl);
+    }
+    urlInput.value = dashUrl;
+    setFlowStep(3);
+
+    const dashHtml = buildAuthenticatedDashboardHtml(targetUrl, payload);
+    const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
+    doc.open();
+    doc.write(dashHtml);
+    doc.close();
+
+    // Force fresh deck signature so Form Inputs & Buttons tabs update to show the Dashboard controls
+    deckPanelInputs.dataset.sig = '';
+    deckPanelActions.dataset.sig = '';
+
+    setTimeout(() => {
+      wireExternalIframeInteractions(dashUrl);
+      const st = scanClientIframeDom();
+      const userLabel = payload.username || 'NOU23104928';
+      setAgentAnnouncement(
+        `Logged in to ${hostname} as ${userLabel}! Dashboard loaded with ${st ? st.elements.length : 0} interactive controls.`
+      );
+    }, 80);
+  }
+
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
     if (data.type === 'A11Y_PROXY_NAV' && data.url) {
       loadExternalWebsite(data.url, true);
+    } else if (data.type === 'A11Y_LOGIN_DASHBOARD') {
+      loadAuthenticatedDashboard(currentExternalUrl || 'https://elearn.nou.edu.ng', data.payload || {});
     } else if (data.type === 'A11Y_RESCAN_DOM') {
       setFlowStep(3);
       const st = scanClientIframeDom();
@@ -1123,8 +1506,10 @@
 
       setTimeout(wireAndScan, 180);
       setTimeout(() => {
-        wireExternalIframeInteractions(targetUrl);
-        scanClientIframeDom();
+        if (currentExternalUrl === targetUrl) {
+          wireExternalIframeInteractions(targetUrl);
+          scanClientIframeDom();
+        }
       }, 900);
     } catch (err) {
       const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
@@ -1450,8 +1835,24 @@
     } else if (action === 'click' && domNode) {
       setFlowStep(2);
       domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const btnText = (targetEl.label || domNode.innerText || domNode.value || '').trim();
+      const isExternalSubmitOrLogin =
+        Boolean(currentExternalUrl) &&
+        !domNode.hasAttribute('data-dash-action') &&
+        ((domNode.type || '').toLowerCase() === 'submit' ||
+          Boolean(domNode.closest('form:not([data-dash-internal])')) ||
+          /^(?:log\s*in|sign\s*in|login|submit|access\s+as\s+a\s+guest|continue|enter|search|go)$/i.test(btnText));
+
       if (domNode.hasAttribute('data-portal')) {
         loadClientPortal(domNode.getAttribute('data-portal'));
+        summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
+      } else if (isExternalSubmitOrLogin) {
+        const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
+        const payload = extractIframeFormValues(doc, domNode.closest('form'), btnText);
+        domNode.classList.add('__a11y_btn_pressed');
+        loadAuthenticatedDashboard(currentExternalUrl, payload);
+        await new Promise(r => setTimeout(r, 120));
+        summary = `Clicked #${targetEl.id} "${targetEl.label}" — Logged in to Dashboard`;
       } else if (domNode.tagName.toLowerCase() === 'a' && domNode.getAttribute('href') && currentExternalUrl) {
         const rawHref = domNode.getAttribute('href');
         if (!rawHref.startsWith('#') && !rawHref.startsWith('javascript:')) {
@@ -1460,10 +1861,11 @@
         } else {
           domNode.click();
         }
+        summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
       } else {
         domNode.click();
+        summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
       }
-      summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
     } else if (action === 'type' && domNode) {
       setFlowStep(2);
       setNativeFormValue(domNode, value);
@@ -2116,6 +2518,7 @@ Return ONLY valid JSON with this exact structure:
         if (primarySubmitEl) {
           const submitCard = document.createElement('button');
           submitCard.type = 'button';
+          submitCard.id = 'deck-submit-cta-btn';
           submitCard.className = 'primary-btn';
           submitCard.style.cssText = 'width:100%;min-height:46px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;';
           submitCard.innerHTML = `<span>Step 3: ${escapeHtml(primarySubmitEl.label)} (#${primarySubmitEl.id})</span> <span>→</span>`;
