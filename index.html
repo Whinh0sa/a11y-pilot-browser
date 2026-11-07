@@ -2,101 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>A11yPilot — Accessible Agentic Browser & Visual Click/Type Assistant</title>
-  <meta name="description" content="Accessible web browser with Set-of-Mark visual overlays and Gemini Multimodal AI click/type assistant for people with disabilities." />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>A11yPilot — Accessible AI Browser &amp; Form Assistant</title>
+  <meta name="description" content="Consumer-grade accessible web browser with Set-of-Mark visual overlays, Gemini 3.8 Flash & DeepSeek AI agents, and 1-click form filling." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <div class="app-shell">
-    <!-- Top Browser & Accessibility Toolbar -->
+    <!-- Clean Consumer Top Header -->
     <header class="top-bar" role="banner">
       <div class="brand-cluster">
-        <div class="brand-mark" aria-hidden="true">A11y</div>
-        <div>
-          <span class="brand-title">A11yPilot Browser</span>
-          <span class="brand-subtitle">Visual Click &amp; Type Assistant for Accessibility</span>
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">A11yPilot</span>
+          <span class="brand-subtitle">Accessible AI Browser</span>
         </div>
       </div>
 
-      <nav class="nav-cluster" aria-label="Browser Navigation">
-        <button type="button" id="btn-back" class="icon-btn" title="Navigate Back" aria-label="Navigate Back">
-          ← Back
-        </button>
-        <button type="button" id="btn-reload" class="icon-btn" title="Reload Page" aria-label="Reload Page">
-          ↻ Reload
-        </button>
-
-        <form id="url-form" class="url-form" aria-label="Address Bar">
-          <input
-            type="text"
-            id="url-input"
-            class="url-input"
-            aria-label="Website URL"
-            placeholder="Enter URL or choose an accessible portal..."
-            value="https://carebridge.a11y/sites/clinic"
-          />
-          <button type="submit" id="btn-go" class="icon-btn">Go</button>
-        </form>
-
-        <div class="site-switcher" role="group" aria-label="Demo Portals">
-          <button type="button" class="preset-site-btn active" data-site="/sites/clinic" id="preset-clinic">
-            🏥 Clinic Portal
+      <!-- Unified Smart Address Bar -->
+      <div class="address-cluster" role="search" aria-label="Website Navigation">
+        <div class="nav-btn-group">
+          <button type="button" id="btn-back" class="nav-icon-btn" title="Go Back" aria-label="Navigate Back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <button type="button" class="preset-site-btn" data-site="/sites/grocery" id="preset-grocery">
-            🛒 Grocery Store
-          </button>
-          <button type="button" class="preset-site-btn" data-site="/sites/civic" id="preset-civic">
-            🚐 Civic Paratransit
+          <button type="button" id="btn-reload" class="nav-icon-btn" title="Reload Page" aria-label="Reload Page">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
           </button>
         </div>
-      </nav>
 
-      <div class="a11y-toolbar" role="toolbar" aria-label="Accessibility Preferences">
-        <button type="button" id="toggle-badges-btn" class="icon-btn active" aria-pressed="true" title="Toggle Set-of-Mark Number Badges (#1..#N)">
-          # Badges: ON
+        <form id="url-form" class="url-form" aria-label="Address Bar">
+          <div class="url-input-wrap">
+            <svg class="url-lock-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <input
+              type="text"
+              id="url-input"
+              class="url-input"
+              aria-label="Website URL or Search"
+              placeholder="Enter any URL (e.g. elearn.nou.edu.ng) or choose a site..."
+              value="https://carebridge.a11y/sites/clinic"
+            />
+          </div>
+          <button type="submit" id="btn-go" class="go-btn">Load Site</button>
+        </form>
+      </div>
+
+      <!-- Right Action Cluster: AI Model Selector & Accessibility Menu -->
+      <div class="header-actions" role="toolbar" aria-label="AI Model and Accessibility Settings">
+        <button type="button" id="open-ai-modal-btn" class="model-pill-btn" aria-label="Select AI Model (Gemini 3.8 Flash or DeepSeek)">
+          <span class="model-status-dot" aria-hidden="true"></span>
+          <span id="active-engine-badge">Gemini 3.8 Flash</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
         </button>
-        <button type="button" id="toggle-tts-btn" class="icon-btn" aria-pressed="false" title="Toggle Spoken Narration (Text-to-Speech)">
-          🔊 Voice Readout: OFF
+
+        <button type="button" id="toggle-tts-btn" class="utility-btn" aria-pressed="false" title="Toggle Spoken Voice Narration">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          <span class="btn-label-desktop" id="tts-btn-label">Voice Off</span>
         </button>
-        <button type="button" id="toggle-contrast-btn" class="icon-btn" aria-pressed="false" title="Toggle WCAG AAA High-Contrast Mode">
-          ◐ High Contrast
+
+        <button type="button" id="toggle-contrast-btn" class="utility-btn" aria-pressed="false" title="Toggle High Contrast Mode">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/></svg>
+          <span class="btn-label-desktop">Contrast</span>
         </button>
-        <button type="button" id="toggle-large-text-btn" class="icon-btn" aria-pressed="false" title="Toggle Larger Interface Text">
-          A+ Large Text
-        </button>
-        <button type="button" id="open-gemini-modal-btn" class="icon-btn" title="Configure Gemini API Key">
-          ✦ Gemini Key
+
+        <button type="button" id="toggle-large-text-btn" class="utility-btn" aria-pressed="false" title="Toggle Large Text">
+          <span style="font-weight:800;font-size:14px;">Aa</span>
         </button>
       </div>
     </header>
 
-    <!-- Main Split Workspace -->
-    <main class="workspace">
-      <!-- Left: Live Browser Stage + Interactive Visual Overlay -->
-      <section class="browser-column" aria-label="Live Webpage Viewport">
+    <!-- Sub-Header: Quick Site Switcher & Guided 3-Step Flow -->
+    <div class="sub-bar" role="region" aria-label="Quick Sites and User Flow">
+      <div class="site-pills" role="group" aria-label="Quick Websites">
+        <span class="sub-bar-label">Quick Sites:</span>
+        <button type="button" class="preset-site-btn active" data-site="/sites/clinic" id="preset-clinic">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Medical Clinic
+        </button>
+        <button type="button" class="preset-site-btn" data-site="/sites/grocery" id="preset-grocery">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+          Grocery Delivery
+        </button>
+        <button type="button" class="preset-site-btn" data-site="/sites/civic" id="preset-civic">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          Paratransit Van
+        </button>
+        <button type="button" class="preset-site-btn" data-external="https://elearn.nou.edu.ng" id="preset-nou">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          NOU e-Learning
+        </button>
+      </div>
+
+      <!-- Clear 3-Step User Flow Indicator -->
+      <div class="flow-stepper" aria-label="User Flow Steps">
+        <span class="flow-step active" id="flow-step-1">
+          <span class="step-num">1</span> Load Site
+        </span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span class="flow-step" id="flow-step-2">
+          <span class="step-num">2</span> Auto-Fill or Tap
+        </span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span class="flow-step" id="flow-step-3">
+          <span class="step-num">3</span> Submit &amp; Verify
+        </span>
+      </div>
+    </div>
+
+    <!-- Main Responsive Split Workspace -->
+    <main class="workspace" id="main-workspace" data-mobile-view="canvas">
+      <!-- Left Column: Live Browser Stage -->
+      <section class="browser-column" id="browser-column" aria-label="Live Webpage Viewport">
+        <!-- Compact Stage Status & Floating Toolbar -->
         <div class="stage-header">
           <div class="page-meta">
             <span class="live-dot" aria-hidden="true"></span>
             <h1 id="live-page-title" class="page-title-label">CareBridge Health — Patient Appointment Portal</h1>
-            <span id="element-count-badge" class="element-counter">17 interactive controls</span>
+            <span id="element-count-badge" class="element-counter">7 inputs • 17 controls</span>
           </div>
 
-          <div class="scroll-controls" role="group" aria-label="Page Scroll Controls">
-            <button type="button" id="scroll-up-btn" class="icon-btn" aria-label="Scroll Page Up">↑ Scroll Up</button>
-            <button type="button" id="scroll-down-btn" class="icon-btn" aria-label="Scroll Page Down">↓ Scroll Down</button>
+          <div class="stage-controls" role="group" aria-label="Viewport Controls">
+            <button type="button" id="toggle-badges-btn" class="stage-pill-btn active" aria-pressed="true">
+              # Badges: ON
+            </button>
+            <button type="button" id="scroll-up-btn" class="stage-pill-btn" aria-label="Scroll Page Up">
+              ↑ Up
+            </button>
+            <button type="button" id="scroll-down-btn" class="stage-pill-btn" aria-label="Scroll Page Down">
+              ↓ Down
+            </button>
           </div>
         </div>
 
         <!-- Live Page Status Alert Strip -->
         <div id="live-alert-strip" class="live-alert-strip" role="status" aria-live="polite">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           <span id="live-alert-text"></span>
         </div>
 
-        <!-- Live Viewport Stage with Pixel-Aligned Set-of-Mark Overlay -->
+        <!-- Viewport Frame -->
         <div class="viewport-frame-outer">
           <div id="viewport-stage" class="viewport-stage">
             <iframe
@@ -116,7 +167,7 @@
             <!-- Live Website Loading Overlay -->
             <div id="viewport-loading" class="viewport-loading" role="status" aria-live="polite">
               <div class="loading-spinner" aria-hidden="true"></div>
-              <div style="font-weight:800;font-size:15px;">Loading Live Website...</div>
+              <div class="loading-title">Loading Live Website...</div>
               <div id="loading-url-label" class="loading-url-text"></div>
             </div>
 
@@ -128,14 +179,16 @@
         </div>
       </section>
 
-      <!-- Right: Visual Click/Type Assistant & Accessible Action Deck -->
-      <aside class="assistant-column" aria-label="AI Visual Click/Type Assistant">
+      <!-- Right Column: Simplified Consumer Assistant & Action Deck -->
+      <aside class="assistant-column" id="assistant-column" aria-label="AI Assistant and Accessible Controls">
+        <!-- AI Command & Voice Box -->
         <div class="agent-command-card">
-          <div class="agent-header-row">
-            <div class="agent-title">
-              <span>Visual Click &amp; Type Assistant</span>
-            </div>
-            <span id="active-engine-badge" class="engine-tag">Semantic Grounding Ready</span>
+          <div class="command-card-top">
+            <span class="command-card-heading">What would you like to do on this page?</span>
+            <button type="button" id="quick-autofill-cta" class="autofill-cta-btn" title="Automatically fill all visible form inputs on this page">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+              Auto-Fill Form
+            </button>
           </div>
 
           <form id="agent-command-form" class="command-input-group">
@@ -143,8 +196,8 @@
               type="text"
               id="agent-command-input"
               class="command-input"
-              aria-label="Tell the agent what to click, type, or select"
-              placeholder="e.g. &quot;Type Maya Lin in Patient Name, check Wheelchair, and click Confirm&quot; or &quot;Click #4&quot;"
+              aria-label="Tell the agent what to click, type, or fill"
+              placeholder="e.g. &quot;Fill Maya Lin in #1&quot;, &quot;Auto-fill form&quot;, or &quot;Click Confirm&quot;..."
               autocomplete="off"
             />
             <button
@@ -154,34 +207,46 @@
               title="Speak Command (Push-to-Talk)"
               aria-label="Speak Command via Microphone"
             >
-              🎤
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             </button>
             <button type="submit" id="run-agent-btn" class="run-agent-btn">
-              Run Agent
+              Run
             </button>
           </form>
 
-          <div id="preset-prompts-container" class="preset-prompts" aria-label="Suggested One-Click Agent Commands"></div>
+          <!-- Context-Aware 1-Tap Prompt Chips -->
+          <div id="preset-prompts-container" class="preset-prompts" aria-label="Suggested One-Tap Actions"></div>
         </div>
 
-        <!-- Spoken / Text Agent Feedback -->
+        <!-- Live Agent Feedback Banner -->
         <div class="agent-speech-box" role="status" aria-live="polite">
-          <span class="speech-icon" aria-hidden="true">✦</span>
-          <div id="agent-speech-text">
-            Ready! Click any numbered badge on the webpage, use the simplified controls below, or tell the agent what to fill and click.
+          <div class="speech-badge" aria-hidden="true">AI</div>
+          <div id="agent-speech-text" class="speech-text">
+            Step 1: Pick a site or enter a URL. Step 2: Tap "Auto-Fill Form", use the Form Inputs tab below, or type a command.
           </div>
         </div>
 
-        <!-- Tabs: Accessible Action Deck vs. Visual Agent Step Log -->
-        <div class="deck-tabs" role="tablist">
+        <!-- Clean 3-Tab Segmented Control (Progressive Disclosure!) -->
+        <div class="deck-tabs" role="tablist" aria-label="Page Control Categories">
           <button
             type="button"
-            id="tab-deck-btn"
+            id="tab-inputs-btn"
             class="deck-tab active"
             role="tab"
             aria-selected="true"
+            data-tab="inputs"
           >
-            Accessible Action Deck
+            Form Inputs (<span id="count-inputs">0</span>)
+          </button>
+          <button
+            type="button"
+            id="tab-actions-btn"
+            class="deck-tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="actions"
+          >
+            Buttons &amp; Links (<span id="count-actions">0</span>)
           </button>
           <button
             type="button"
@@ -189,53 +254,142 @@
             class="deck-tab"
             role="tab"
             aria-selected="false"
+            data-tab="history"
           >
-            Agent Visual Trace (<span id="trace-count">0</span>)
+            Log (<span id="trace-count">0</span>)
           </button>
         </div>
 
-        <!-- Tab 1: Simplified Accessible Controls Deck -->
-        <div id="deck-panel-controls" class="deck-body" role="tabpanel"></div>
+        <!-- Tab 1: Focused Form Inputs & Dropdowns -->
+        <div id="deck-panel-inputs" class="deck-body" role="tabpanel"></div>
 
-        <!-- Tab 2: Agent Step Log -->
+        <!-- Tab 2: Buttons, Toggles & Navigation Links with Instant Filter -->
+        <div id="deck-panel-actions" class="deck-body" role="tabpanel" style="display: none;"></div>
+
+        <!-- Tab 3: Agent Visual Step Trace -->
         <div id="deck-panel-history" class="deck-body" role="tabpanel" style="display: none;">
-          <div class="section-label">Executed Visual Actions</div>
+          <div class="section-label">Executed Actions Timeline</div>
           <div id="step-log-list" class="step-log-list"></div>
         </div>
       </aside>
     </main>
+
+    <!-- Mobile Bottom Navigation Bar (Visible on <960px screens) -->
+    <nav class="mobile-bottom-nav" aria-label="Mobile View Switcher">
+      <button type="button" class="mobile-nav-btn active" data-mobile-target="canvas">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/></svg>
+        <span>Live Site</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-target="inputs">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        <span>Fill Form (<strong id="mobile-inputs-count">0</strong>)</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-target="actions">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 15l6 6m-6-6v4.8m0-4.8h4.8"/><path d="M9 19.8V15m0 0H4.2M9 15l-6 6"/><path d="M15 4.2V9m0 0h4.8M15 9l6-6"/><path d="M9 4.2V9m0 0H4.2M9 9 3 3"/></svg>
+        <span>Buttons (<strong id="mobile-actions-count">0</strong>)</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-target="ai">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        <span>AI Agent</span>
+      </button>
+    </nav>
   </div>
 
-  <!-- Quick-Type Modal when clicking an Input/Select directly on the Live Viewport -->
+  <!-- Quick-Type Modal when tapping a #Badge on the Live Viewport -->
   <div id="quick-field-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="quick-field-title">
     <div class="modal-card">
-      <h2 id="quick-field-title">Type into Field</h2>
+      <div class="modal-header">
+        <h2 id="quick-field-title">Fill Webpage Field</h2>
+        <button type="button" id="quick-field-cancel-top" class="modal-close-x" aria-label="Close">✕</button>
+      </div>
       <p id="quick-field-subtitle">Enter the text or choose an option for this webpage field:</p>
       <div id="quick-field-input-container"></div>
       <div class="modal-actions">
-        <button type="button" id="quick-field-cancel" class="icon-btn">Cancel</button>
-        <button type="button" id="quick-field-submit" class="run-agent-btn" style="height:36px;">Apply to Page</button>
+        <button type="button" id="quick-field-cancel" class="secondary-btn">Cancel</button>
+        <button type="button" id="quick-field-submit" class="primary-btn">Apply to Webpage</button>
       </div>
     </div>
   </div>
 
-  <!-- Gemini API Key Configuration Modal -->
-  <div id="gemini-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="gemini-modal-title">
-    <div class="modal-card">
-      <h2 id="gemini-modal-title">Configure Gemini Multimodal API</h2>
+  <!-- Multi-Provider AI Model & API Settings Modal (Gemini 3.8 Flash + DeepSeek V3/R1) -->
+  <div id="ai-settings-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h2 id="ai-modal-title">AI Agent Provider &amp; Model Settings</h2>
+        <button type="button" id="ai-modal-close-top" class="modal-close-x" aria-label="Close">✕</button>
+      </div>
       <p>
-        A11yPilot includes a built-in <strong>Semantic DOM Grounding Engine</strong> that works out-of-the-box. Paste a Gemini API key below to enable live <strong>Gemini 2.5 Flash</strong> planning directly from your browser.
+        Choose between <strong>Google Gemini 3.8 Flash</strong>, <strong>DeepSeek V3 / R1</strong> (ultra-low cost), or the <strong>Built-in Local Semantic Engine</strong> (free, zero API key required).
       </p>
-      <input
-        type="password"
-        id="gemini-key-input"
-        class="modal-input"
-        placeholder="AIzaSy..."
-        aria-label="Gemini API Key"
-      />
-      <div class="modal-actions">
-        <button type="button" id="gemini-modal-close" class="icon-btn">Cancel</button>
-        <button type="button" id="gemini-modal-save" class="run-agent-btn" style="height:36px;">Save API Key</button>
+
+      <div class="provider-selector" role="radiogroup" aria-label="AI Provider">
+        <button type="button" class="provider-card active" data-provider="gemini" id="prov-btn-gemini">
+          <div class="prov-title">Google Gemini</div>
+          <div class="prov-desc">Gemini 3.8 Flash • Multimodal &amp; DOM</div>
+        </button>
+        <button type="button" class="provider-card" data-provider="deepseek" id="prov-btn-deepseek">
+          <div class="prov-title">DeepSeek API <span class="cheap-badge">Low Cost</span></div>
+          <div class="prov-desc">DeepSeek V3 / R1 • Fast &amp; Affordable</div>
+        </button>
+        <button type="button" class="provider-card" data-provider="local" id="prov-btn-local">
+          <div class="prov-title">Built-in Local</div>
+          <div class="prov-desc">Free • Instant Semantic Grounding</div>
+        </button>
+      </div>
+
+      <!-- Gemini Configuration Panel -->
+      <div id="provider-panel-gemini" class="provider-config-panel">
+        <label class="modal-label" for="gemini-model-select">Gemini Model</label>
+        <select id="gemini-model-select" class="modal-input">
+          <option value="gemini-3.8-flash">gemini-3.8-flash (Recommended — Fast Multimodal &amp; DOM)</option>
+          <option value="gemini-3.8-pro">gemini-3.8-pro (Complex Multi-Step Reasoning)</option>
+          <option value="gemini-3.8-flash-lite">gemini-3.8-flash-lite (Ultra-Fast / Low Latency)</option>
+          <option value="gemini-3.0-flash">gemini-3.0-flash (Fallback Flash)</option>
+        </select>
+
+        <label class="modal-label" for="gemini-key-input">Gemini API Key</label>
+        <input
+          type="password"
+          id="gemini-key-input"
+          class="modal-input"
+          placeholder="AIzaSy... (Leave blank to use Built-in Local Grounding)"
+          aria-label="Gemini API Key"
+        />
+      </div>
+
+      <!-- DeepSeek Configuration Panel -->
+      <div id="provider-panel-deepseek" class="provider-config-panel" style="display: none;">
+        <label class="modal-label" for="deepseek-model-select">DeepSeek Model</label>
+        <select id="deepseek-model-select" class="modal-input">
+          <option value="deepseek-chat">deepseek-chat (DeepSeek-V3 — Cheapest &amp; Fast)</option>
+          <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1 — Reasoning Model)</option>
+        </select>
+
+        <label class="modal-label" for="deepseek-key-input">DeepSeek API Key (api.deepseek.com)</label>
+        <input
+          type="password"
+          id="deepseek-key-input"
+          class="modal-input"
+          placeholder="sk-..."
+          aria-label="DeepSeek API Key"
+        />
+      </div>
+
+      <!-- Built-in Local Panel -->
+      <div id="provider-panel-local" class="provider-config-panel" style="display: none;">
+        <div class="local-info-box">
+          <strong>Zero Configuration Required:</strong> The Built-in Semantic DOM Grounding Engine parses natural language commands, matches form labels and button badges (`#1..#N`), and auto-fills forms locally in your browser at zero cost.
+        </div>
+      </div>
+
+      <div id="api-test-status" class="api-test-status" role="status" aria-live="polite"></div>
+
+      <div class="modal-actions" style="justify-content: space-between;">
+        <button type="button" id="test-api-btn" class="secondary-btn">Test Model Connection</button>
+        <div style="display:flex;gap:8px;">
+          <button type="button" id="ai-modal-close" class="secondary-btn">Cancel</button>
+          <button type="button" id="ai-modal-save" class="primary-btn">Save &amp; Activate</button>
+        </div>
       </div>
     </div>
   </div>

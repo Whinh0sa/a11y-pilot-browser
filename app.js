@@ -2,13 +2,21 @@
   let currentState = null;
   let badgesVisible = true;
   let ttsEnabled = false;
+
+  // Multi-provider AI state (Gemini 3.8 Flash + DeepSeek V3/R1 + Local Engine)
+  let aiProvider = localStorage.getItem('a11y_ai_provider') || 'gemini';
+  let geminiModel = localStorage.getItem('a11y_gemini_model') || 'gemini-3.8-flash';
   let geminiApiKey = localStorage.getItem('a11y_gemini_key') || '';
+  let deepseekModel = localStorage.getItem('a11y_deepseek_model') || 'deepseek-chat';
+  let deepseekApiKey = localStorage.getItem('a11y_deepseek_key') || '';
+
   let activeQuickElement = null;
   let usePlaywrightBackend = false;
   let clientHistory = [];
   let navStack = ['/sites/clinic'];
   let currentSiteKey = '/sites/clinic';
   let currentExternalUrl = null;
+  let activeFlowStep = 1;
 
   // Built-in Realistic Portals
   const PORTAL_PAGES = {
@@ -23,13 +31,13 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     body { background: #f4f7f9; color: #102a43; line-height: 1.5; }
-    header { background: #0b4f6c; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; }
+    header { background: #0b4f6c; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
     .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
     .brand-badge { background: #20bf55; color: #062b16; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
-    nav { display: flex; gap: 10px; }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; }
     nav a { color: #d9e2ec; text-decoration: none; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     nav a:hover, nav a.active { background: rgba(255,255,255,0.18); color: #fff; }
-    .container { max-width: 1140px; margin: 18px auto; padding: 0 20px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; }
+    .container { max-width: 1140px; margin: 18px auto; padding: 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
     .card { background: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #d9e2ec; box-shadow: 0 4px 12px rgba(16,42,67,0.05); }
     h1 { font-size: 19px; margin-bottom: 4px; color: #0b4f6c; }
     .subtitle { font-size: 13px; color: #486581; margin-bottom: 14px; }
@@ -37,18 +45,18 @@
     .search-row input { flex: 1; padding: 9px 12px; border: 1.5px solid #bcccdc; border-radius: 8px; font-size: 13px; }
     .search-row button { padding: 9px 14px; background: #0b4f6c; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; }
     .doctor-list { display: flex; flex-direction: column; gap: 10px; }
-    .doc-card { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1.5px solid #e1e8ef; border-radius: 10px; background: #fafcfe; }
+    .doc-card { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1.5px solid #e1e8ef; border-radius: 10px; background: #fafcfe; gap: 10px; }
     .doc-card.selected { border-color: #0b4f6c; background: #eef6fa; }
     .doc-info h3 { font-size: 15px; color: #102a43; }
     .doc-info p { font-size: 12.5px; color: #486581; }
     .doc-tag { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: #d8f3dc; color: #1b4332; }
-    .select-doc-btn { padding: 7px 12px; border-radius: 8px; border: 1.5px solid #0b4f6c; background: #fff; color: #0b4f6c; font-weight: 700; cursor: pointer; font-size: 12.5px; }
+    .select-doc-btn { padding: 7px 12px; border-radius: 8px; border: 1.5px solid #0b4f6c; background: #fff; color: #0b4f6c; font-weight: 700; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
     .doc-card.selected .select-doc-btn { background: #0b4f6c; color: #fff; }
     .form-group { margin-bottom: 11px; }
     .form-group label { display: block; font-size: 12.5px; font-weight: 700; color: #243b53; margin-bottom: 4px; }
     .form-group input, .form-group select { width: 100%; padding: 8px 11px; border: 1.5px solid #bcccdc; border-radius: 8px; font-size: 13.5px; color: #102a43; background: #fff; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .checkbox-row { display: flex; gap: 14px; align-items: center; margin: 10px 0; font-size: 12.5px; font-weight: 600; color: #334e68; }
+    .checkbox-row { display: flex; gap: 14px; align-items: center; margin: 10px 0; font-size: 12.5px; font-weight: 600; color: #334e68; flex-wrap: wrap; }
     .checkbox-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .checkbox-row input { width: 16px; height: 16px; }
     .submit-btn { width: 100%; padding: 11px; background: #147d64; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 4px; }
@@ -70,45 +78,6 @@
   </header>
 
   <main class="container">
-    <section class="card">
-      <h1>Available Specialists</h1>
-      <p class="subtitle">Select a specialist below or use the booking form on the right.</p>
-
-      <div class="search-row">
-        <input type="text" id="doctor-search" aria-label="Search doctor by name or specialty" placeholder="Search doctor or specialty (e.g. Cardiology, Neurology)..." />
-        <button type="button" id="filter-btn" onclick="filterDoctors()">Filter List</button>
-      </div>
-
-      <div class="doctor-list">
-        <div class="doc-card selected" id="doc-card-patel" data-search="arjun patel cardiology heart">
-          <div class="doc-info">
-            <h3>Dr. Arjun Patel, MD</h3>
-            <p>Cardiology & Vascular Care • Main Medical Center</p>
-            <span class="doc-tag">Next Available: Tomorrow 10:00 AM</span>
-          </div>
-          <button type="button" class="select-doc-btn" aria-label="Select Dr. Arjun Patel" onclick="chooseDoctor('Dr. Arjun Patel (Cardiology)', 'doc-card-patel')">Selected</button>
-        </div>
-
-        <div class="doc-card" id="doc-card-chen" data-search="elena chen neurology migraine nerve">
-          <div class="doc-info">
-            <h3>Dr. Elena Chen, MD</h3>
-            <p>Neurology & Mobility Rehabilitation • West Wing Suite 300</p>
-            <span class="doc-tag">Next Available: Thursday 2:30 PM</span>
-          </div>
-          <button type="button" class="select-doc-btn" aria-label="Select Dr. Elena Chen" onclick="chooseDoctor('Dr. Elena Chen (Neurology)', 'doc-card-chen')">Choose Doctor</button>
-        </div>
-
-        <div class="doc-card" id="doc-card-okafor" data-search="amara okafor primary care general medicine">
-          <div class="doc-info">
-            <h3>Dr. Amara Okafor, DO</h3>
-            <p>Accessible Primary Care & Telehealth • Ground Floor</p>
-            <span class="doc-tag">Next Available: Friday 9:15 AM</span>
-          </div>
-          <button type="button" class="select-doc-btn" aria-label="Select Dr. Amara Okafor" onclick="chooseDoctor('Dr. Amara Okafor (Primary Care)', 'doc-card-okafor')">Choose Doctor</button>
-        </div>
-      </div>
-    </section>
-
     <section class="card">
       <h1>Schedule Appointment</h1>
       <p class="subtitle">Complete patient details to confirm your medical visit.</p>
@@ -170,6 +139,45 @@
 
       <div id="booking-confirmation" class="banner-success" role="status" aria-live="polite"></div>
     </section>
+
+    <section class="card">
+      <h1>Available Specialists</h1>
+      <p class="subtitle">Select a specialist below or use the booking form.</p>
+
+      <div class="search-row">
+        <input type="text" id="doctor-search" aria-label="Search doctor by name or specialty" placeholder="Search Cardiology, Neurology..." />
+        <button type="button" id="filter-btn" onclick="filterDoctors()">Filter List</button>
+      </div>
+
+      <div class="doctor-list">
+        <div class="doc-card selected" id="doc-card-patel" data-search="arjun patel cardiology heart">
+          <div class="doc-info">
+            <h3>Dr. Arjun Patel, MD</h3>
+            <p>Cardiology & Vascular Care • Main Medical Center</p>
+            <span class="doc-tag">Next Available: Tomorrow 10:00 AM</span>
+          </div>
+          <button type="button" class="select-doc-btn" aria-label="Select Dr. Arjun Patel" onclick="chooseDoctor('Dr. Arjun Patel (Cardiology)', 'doc-card-patel')">Selected</button>
+        </div>
+
+        <div class="doc-card" id="doc-card-chen" data-search="elena chen neurology migraine nerve">
+          <div class="doc-info">
+            <h3>Dr. Elena Chen, MD</h3>
+            <p>Neurology & Mobility Rehabilitation • West Wing Suite 300</p>
+            <span class="doc-tag">Next Available: Thursday 2:30 PM</span>
+          </div>
+          <button type="button" class="select-doc-btn" aria-label="Select Dr. Elena Chen" onclick="chooseDoctor('Dr. Elena Chen (Neurology)', 'doc-card-chen')">Choose Doctor</button>
+        </div>
+
+        <div class="doc-card" id="doc-card-okafor" data-search="amara okafor primary care general medicine">
+          <div class="doc-info">
+            <h3>Dr. Amara Okafor, DO</h3>
+            <p>Accessible Primary Care & Telehealth • Ground Floor</p>
+            <span class="doc-tag">Next Available: Friday 9:15 AM</span>
+          </div>
+          <button type="button" class="select-doc-btn" aria-label="Select Dr. Amara Okafor" onclick="chooseDoctor('Dr. Amara Okafor (Primary Care)', 'doc-card-okafor')">Choose Doctor</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -219,12 +227,12 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     body { background: #f8f9fa; color: #1f2933; }
-    header { background: #1b4332; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; }
+    header { background: #1b4332; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
     .brand { font-size: 18px; font-weight: 800; }
     nav { display: flex; gap: 10px; }
     nav a { color: #d8f3dc; text-decoration: none; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     nav a.active, nav a:hover { background: rgba(255,255,255,0.18); color: #fff; }
-    .layout { max-width: 1140px; margin: 18px auto; padding: 0 20px; display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 20px; }
+    .layout { max-width: 1140px; margin: 18px auto; padding: 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
     .panel { background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e4e7eb; }
     .search-bar { display: flex; gap: 8px; margin-bottom: 14px; }
     .search-bar input { flex: 1; padding: 9px 12px; border: 1.5px solid #cbd2d9; border-radius: 8px; font-size: 13.5px; }
@@ -256,6 +264,36 @@
   </header>
 
   <main class="layout">
+    <section class="panel">
+      <h2 style="font-size:17px;margin-bottom:4px;">Delivery Checkout (<span id="cart-count">1</span>)</h2>
+      <ul class="cart-items" id="cart-list">
+        <li><span>Whole Grain Crackers</span><span>$3.50</span></li>
+      </ul>
+      <div style="font-size:15px;font-weight:800;margin-bottom:10px;">Total: $<span id="cart-total">3.50</span></div>
+
+      <div class="form-group">
+        <label for="delivery-address">Delivery Street Address</label>
+        <input type="text" id="delivery-address" value="742 Evergreen Terrace, Apt 1B" />
+      </div>
+
+      <div class="form-group">
+        <label for="dropoff-option">Accessible Drop-off Preference</label>
+        <select id="dropoff-option">
+          <option value="Hand directly to resident at door">Hand directly to resident at door</option>
+          <option value="Place on raised porch table (Waist height)">Place on raised porch table (Waist height)</option>
+          <option value="Ring bell and wait 2 minutes">Ring bell and wait 2 minutes</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="delivery-notes">Driver Instructions</label>
+        <input type="text" id="delivery-notes" placeholder="e.g. Please use side ramp entrance" />
+      </div>
+
+      <button type="button" id="place-order-btn" class="checkout-btn" onclick="placeOrder()">Place Grocery Order</button>
+      <div id="order-status" class="order-msg" role="status" aria-live="polite"></div>
+    </section>
+
     <section class="panel">
       <h1 style="font-size:18px;margin-bottom:10px;">Same-Day Doorstep Essentials</h1>
       <div class="search-bar">
@@ -309,36 +347,6 @@
         </div>
       </div>
     </section>
-
-    <section class="panel">
-      <h2 style="font-size:17px;margin-bottom:4px;">Delivery Cart (<span id="cart-count">1</span>)</h2>
-      <ul class="cart-items" id="cart-list">
-        <li><span>Whole Grain Crackers</span><span>$3.50</span></li>
-      </ul>
-      <div style="font-size:15px;font-weight:800;margin-bottom:10px;">Total: $<span id="cart-total">3.50</span></div>
-
-      <div class="form-group">
-        <label for="delivery-address">Delivery Street Address</label>
-        <input type="text" id="delivery-address" value="742 Evergreen Terrace, Apt 1B" />
-      </div>
-
-      <div class="form-group">
-        <label for="dropoff-option">Accessible Drop-off Preference</label>
-        <select id="dropoff-option">
-          <option value="Hand directly to resident at door">Hand directly to resident at door</option>
-          <option value="Place on raised porch table (Waist height)">Place on raised porch table (Waist height)</option>
-          <option value="Ring bell and wait 2 minutes">Ring bell and wait 2 minutes</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="delivery-notes">Driver Instructions</label>
-        <input type="text" id="delivery-notes" placeholder="e.g. Please use side ramp entrance" />
-      </div>
-
-      <button type="button" id="place-order-btn" class="checkout-btn" onclick="placeOrder()">Place Grocery Order</button>
-      <div id="order-status" class="order-msg" role="status" aria-live="polite"></div>
-    </section>
   </main>
 
   <script>
@@ -381,12 +389,12 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     body { background: #f1f5f9; color: #0f172a; }
-    header { background: #1e293b; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; }
+    header { background: #1e293b; color: #ffffff; padding: 14px 26px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
     .brand { font-size: 18px; font-weight: 800; }
     nav { display: flex; gap: 10px; }
     nav a { color: #cbd5e1; text-decoration: none; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     nav a.active, nav a:hover { background: rgba(255,255,255,0.16); color: #fff; }
-    .main { max-width: 1100px; margin: 20px auto; padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .main { max-width: 1100px; margin: 20px auto; padding: 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
     .card { background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #cbd5e1; }
     h1 { font-size: 18px; margin-bottom: 6px; color: #0f172a; }
     p.sub { font-size: 13px; color: #475569; margin-bottom: 14px; }
@@ -482,6 +490,7 @@
   };
 
   // DOM References
+  const mainWorkspace = document.getElementById('main-workspace');
   const viewportStage = document.getElementById('viewport-stage');
   const viewportIframe = document.getElementById('viewport-iframe');
   const viewportLoading = document.getElementById('viewport-loading');
@@ -501,40 +510,109 @@
   const agentCommandInput = document.getElementById('agent-command-input');
   const runAgentBtn = document.getElementById('run-agent-btn');
   const voiceMicBtn = document.getElementById('voice-mic-btn');
+  const quickAutofillCta = document.getElementById('quick-autofill-cta');
   const agentSpeechText = document.getElementById('agent-speech-text');
   const activeEngineBadge = document.getElementById('active-engine-badge');
   const presetPromptsContainer = document.getElementById('preset-prompts-container');
 
-  const deckPanelControls = document.getElementById('deck-panel-controls');
+  // Tabs & Panels
+  const tabInputsBtn = document.getElementById('tab-inputs-btn');
+  const tabActionsBtn = document.getElementById('tab-actions-btn');
+  const tabHistoryBtn = document.getElementById('tab-history-btn');
+  const deckPanelInputs = document.getElementById('deck-panel-inputs');
+  const deckPanelActions = document.getElementById('deck-panel-actions');
   const deckPanelHistory = document.getElementById('deck-panel-history');
   const stepLogList = document.getElementById('step-log-list');
+
+  const countInputs = document.getElementById('count-inputs');
+  const countActions = document.getElementById('count-actions');
   const traceCount = document.getElementById('trace-count');
+  const mobileInputsCount = document.getElementById('mobile-inputs-count');
+  const mobileActionsCount = document.getElementById('mobile-actions-count');
 
-  const tabDeckBtn = document.getElementById('tab-deck-btn');
-  const tabHistoryBtn = document.getElementById('tab-history-btn');
-
-  // Modals
+  // Quick Field Modal
   const quickFieldModal = document.getElementById('quick-field-modal');
   const quickFieldTitle = document.getElementById('quick-field-title');
   const quickFieldSubtitle = document.getElementById('quick-field-subtitle');
   const quickFieldContainer = document.getElementById('quick-field-input-container');
   const quickFieldCancel = document.getElementById('quick-field-cancel');
+  const quickFieldCancelTop = document.getElementById('quick-field-cancel-top');
   const quickFieldSubmit = document.getElementById('quick-field-submit');
 
-  const geminiModal = document.getElementById('gemini-modal');
+  // AI Settings Modal
+  const aiSettingsModal = document.getElementById('ai-settings-modal');
+  const openAiModalBtn = document.getElementById('open-ai-modal-btn');
+  const aiModalClose = document.getElementById('ai-modal-close');
+  const aiModalCloseTop = document.getElementById('ai-modal-close-top');
+  const aiModalSave = document.getElementById('ai-modal-save');
+  const testApiBtn = document.getElementById('test-api-btn');
+  const apiTestStatus = document.getElementById('api-test-status');
+
+  const geminiModelSelect = document.getElementById('gemini-model-select');
   const geminiKeyInput = document.getElementById('gemini-key-input');
-  const openGeminiModalBtn = document.getElementById('open-gemini-modal-btn');
-  const geminiModalClose = document.getElementById('gemini-modal-close');
-  const geminiModalSave = document.getElementById('gemini-modal-save');
+  const deepseekModelSelect = document.getElementById('deepseek-model-select');
+  const deepseekKeyInput = document.getElementById('deepseek-key-input');
+
+  function setFlowStep(stepNum) {
+    activeFlowStep = stepNum;
+    [1, 2, 3].forEach(n => {
+      const el = document.getElementById(`flow-step-${n}`);
+      if (el) el.classList.toggle('active', n === stepNum);
+    });
+  }
 
   function updateEngineBadge() {
-    if (geminiApiKey) {
-      activeEngineBadge.textContent = 'Gemini 2.5 Flash + DOM';
+    if (aiProvider === 'deepseek' && deepseekApiKey) {
+      activeEngineBadge.textContent = deepseekModel === 'deepseek-reasoner' ? 'DeepSeek R1' : 'DeepSeek V3';
+    } else if (aiProvider === 'gemini' && geminiApiKey) {
+      activeEngineBadge.textContent = geminiModel.replace('gemini-', 'Gemini ').replace('-flash', ' Flash').replace('-pro', ' Pro');
+    } else if (aiProvider === 'local') {
+      activeEngineBadge.textContent = 'Local Semantic';
     } else {
-      activeEngineBadge.textContent = 'Semantic Grounding Ready';
+      activeEngineBadge.textContent = `${geminiModel} (Local Ready)`;
     }
   }
   updateEngineBadge();
+
+  function switchDeckTab(tabName) {
+    const isInputs = tabName === 'inputs';
+    const isActions = tabName === 'actions';
+    const isHistory = tabName === 'history';
+
+    tabInputsBtn.classList.toggle('active', isInputs);
+    tabActionsBtn.classList.toggle('active', isActions);
+    tabHistoryBtn.classList.toggle('active', isHistory);
+
+    tabInputsBtn.setAttribute('aria-selected', String(isInputs));
+    tabActionsBtn.setAttribute('aria-selected', String(isActions));
+    tabHistoryBtn.setAttribute('aria-selected', String(isHistory));
+
+    deckPanelInputs.style.display = isInputs ? 'flex' : 'none';
+    deckPanelActions.style.display = isActions ? 'flex' : 'none';
+    deckPanelHistory.style.display = isHistory ? 'flex' : 'none';
+  }
+
+  tabInputsBtn.addEventListener('click', () => switchDeckTab('inputs'));
+  tabActionsBtn.addEventListener('click', () => switchDeckTab('actions'));
+  tabHistoryBtn.addEventListener('click', () => switchDeckTab('history'));
+
+  // Mobile Bottom Nav Switching
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-mobile-target');
+      document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+      mainWorkspace.setAttribute('data-mobile-view', target);
+
+      if (target === 'inputs') switchDeckTab('inputs');
+      else if (target === 'actions') switchDeckTab('actions');
+      else if (target === 'ai') {
+        switchDeckTab('history');
+        setTimeout(() => agentCommandInput.focus(), 80);
+      } else if (target === 'canvas') {
+        setTimeout(scanClientIframeDom, 60);
+      }
+    });
+  });
 
   function setLoadingState(isLoading, urlText = '') {
     if (!viewportLoading) return;
@@ -633,11 +711,6 @@
     }
   }
 
-  /**
-   * Converts cloud-rendered Markdown/Text from r.jina.ai into a rich, interactive,
-   * accessible HTML page that ALWAYS includes fillable Portal Login & Search form fields
-   * as well as all extracted links on the website.
-   */
   function convertJinaReaderToInteractiveHtml(jinaText, targetUrl) {
     const lines = jinaText.split('\n');
     let pageTitle = targetUrl;
@@ -684,14 +757,13 @@
     body { background: #f1f5f9; color: #0f172a; margin: 0; padding: 20px 24px; line-height: 1.55; }
     .top-banner { background: #0f172a; color: #fff; padding: 14px 20px; border-radius: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
     .top-banner h1 { font-size: 17px; margin: 0; color: #f8fafc; }
-    .portal-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; align-items: start; }
+    .portal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; align-items: start; }
     .form-card { background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px; box-shadow: 0 4px 12px rgba(15,23,42,0.05); }
     .form-card h2 { font-size: 16px; margin: 0 0 12px; color: #0f172a; }
     .field-group { margin-bottom: 11px; }
     .field-group label { display: block; font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 4px; }
     .field-group input, .field-group select { width: 100%; padding: 9px 11px; border: 1.5px solid #94a3b8; border-radius: 8px; font-size: 13.5px; color: #0f172a; background: #fff; }
     .btn-submit { width: 100%; padding: 10px 14px; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 13.5px; cursor: pointer; margin-top: 4px; }
-    .btn-submit:hover { background: #0369a1; }
     .content-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; }
     p { margin: 7px 0; font-size: 13.5px; color: #334155; }
     a.a11y-extracted-link, a {
@@ -716,7 +788,6 @@
   </div>
 
   <div class="portal-grid">
-    <!-- Interactive Form Panel so users & AI Agent can always input/fill fields on this site -->
     <section class="form-card" aria-label="Portal Login and Search Controls">
       <h2>Portal Sign-In &amp; Course Search</h2>
       <form id="portal-login-form">
@@ -737,7 +808,7 @@
           <select id="portal-semester" name="semester">
             <option value="2026/1 First Semester">2026/1 First Semester</option>
             <option value="2026/2 Second Semester">2026/2 Second Semester</option>
-            <option value=" exam-registration">Exam &amp; TMA Portal</option>
+            <option value="Exam & TMA Portal">Exam &amp; TMA Portal</option>
           </select>
         </div>
         <button type="submit" id="portal-submit-btn" class="btn-submit">Log In / Submit to ${escapeHtml(hostname)}</button>
@@ -757,20 +828,13 @@
 
   function sanitizeAndInjectBase(rawHtml, targetUrl) {
     let html = String(rawHtml || '');
-
-    // 1. Strip CSP, X-Frame-Options, and meta-refresh tags that cause the iframe to self-navigate and hit "refused to connect"
     html = html.replace(/<meta[^>]*http-equiv=["']?(?:Content-Security-Policy|X-Frame-Options|refresh)["']?[^>]*>/gi, '');
-
-    // 2. Strip external/inline <script> tags from third-party HTML so they cannot run `top.location = ...` or `location.href = ...`
     html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-
-    // 3. Remove target="_blank" or target="_top" so links stay inside our interceptor
     html = html.replace(/\btarget=["']?(?:_blank|_top|_parent)["']?/gi, '');
 
     let hostname = targetUrl;
     try { hostname = new URL(targetUrl).hostname; } catch (_) {}
 
-    // Check if the raw HTML already has at least 2 text/password/email/search inputs
     const existingInputMatches = html.match(/<input\b[^>]*type=["']?(?:text|password|email|search|tel|number)["']?[^>]*>/gi) || [];
     const needsAssistiveFormBar = existingInputMatches.length < 2;
 
@@ -819,7 +883,7 @@
     font-size: 13px; font-weight: 800; color: #f59e0b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .__a11y_bar_grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: center;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: center;
   }
   .__a11y_bar_grid label {
     display: block; font-size: 11.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 3px;
@@ -834,8 +898,6 @@
   }
 </style>
 <script>
-  // Capture-phase interceptor so clicking any link or submitting any form inside the iframe
-  // never triggers a direct cross-origin iframe navigation ("refused to connect")
   (function() {
     window.addEventListener('click', function(e) {
       var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
@@ -892,13 +954,13 @@
     return html;
   }
 
-  // Listen for intercepted link clicks and form submissions from inside the iframe
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
     if (data.type === 'A11Y_PROXY_NAV' && data.url) {
       loadExternalWebsite(data.url, true);
     } else if (data.type === 'A11Y_RESCAN_DOM') {
+      setFlowStep(3);
       const st = scanClientIframeDom();
       if (st && st.alerts && st.alerts.length) {
         setAgentAnnouncement(st.alerts[0]);
@@ -907,7 +969,6 @@
   });
 
   async function fetchExternalWebsiteHtml(targetUrl) {
-    // 1. Try Jina Cloud Browser in HTML return mode first (renders SPAs & preserves <form>/<input> tags!)
     try {
       const res = await fetchWithTimeout(
         `https://r.jina.ai/${targetUrl}`,
@@ -922,7 +983,6 @@
       }
     } catch (_) {}
 
-    // 2. Try AllOrigins JSON proxy
     try {
       const res = await fetchWithTimeout(
         `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
@@ -937,7 +997,6 @@
       }
     } catch (_) {}
 
-    // 3. Try CodeTabs Proxy
     try {
       const res = await fetchWithTimeout(
         `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
@@ -952,7 +1011,6 @@
       }
     } catch (_) {}
 
-    // 4. Try CorsProxy.io
     try {
       const res = await fetchWithTimeout(
         `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
@@ -967,21 +1025,21 @@
       }
     } catch (_) {}
 
-    // 5. Fallback to Jina Reader Markdown-to-Interactive-Portal converter (always includes fillable form fields)
     try {
       const res = await fetchWithTimeout(`https://r.jina.ai/${targetUrl}`, {}, 13000);
       if (res.ok) {
         const text = await res.text();
         if (text && text.length > 60) {
-          return convertJinaReaderToInteractiveHtml(text, targetUrl);
+          return sanitizeAndInjectBase(convertJinaReaderToInteractiveHtml(text, targetUrl), targetUrl);
         }
       }
     } catch (_) {}
 
-    throw new Error(`Could not reach ${targetUrl} through public web proxies.`);
+    throw new Error(`Could not reach ${targetUrl}`);
   }
 
   async function loadExternalWebsite(targetUrl, pushHistory = true) {
+    setFlowStep(1);
     currentExternalUrl = targetUrl;
     currentSiteKey = targetUrl;
     if (pushHistory && navStack[navStack.length - 1] !== targetUrl) {
@@ -990,7 +1048,7 @@
 
     urlInput.value = targetUrl;
     setLoadingState(true, targetUrl);
-    setAgentAnnouncement(`Loading website ${targetUrl}...`, false);
+    setAgentAnnouncement(`Step 1: Loading ${targetUrl}...`, false);
 
     viewportIframe.style.display = 'block';
     screenshotImg.style.display = 'none';
@@ -1006,9 +1064,10 @@
         wireExternalIframeInteractions(targetUrl);
         const st = scanClientIframeDom();
         if (st) {
+          setFlowStep(2);
           const inputCount = st.elements.filter(e => e.category === 'input').length;
           setAgentAnnouncement(
-            `Loaded "${st.title}" (${inputCount} fillable form inputs and ${st.elements.length} total controls ready).`
+            `Step 2 Ready: Loaded "${st.title}" (${inputCount} form inputs ready to fill).`
           );
         }
       };
@@ -1018,17 +1077,15 @@
         wireExternalIframeInteractions(targetUrl);
         scanClientIframeDom();
       }, 900);
-      setTimeout(() => {
-        scanClientIframeDom();
-      }, 2000);
     } catch (err) {
       const doc = viewportIframe.contentDocument || viewportIframe.contentWindow.document;
       doc.open();
-      doc.write(convertJinaReaderToInteractiveHtml(`Title: ${targetUrl}\n# Accessible Portal View for ${targetUrl}\nComplete the form on the left to interact with ${targetUrl}.`, targetUrl));
+      doc.write(sanitizeAndInjectBase(convertJinaReaderToInteractiveHtml(`Title: ${targetUrl}\n# Accessible Portal View for ${targetUrl}\nComplete the form on the left to interact with ${targetUrl}.`, targetUrl), targetUrl));
       doc.close();
       setTimeout(() => {
         wireExternalIframeInteractions(targetUrl);
         scanClientIframeDom();
+        setFlowStep(2);
       }, 120);
       setAgentAnnouncement(`Loaded interactive portal view for ${targetUrl}.`);
     } finally {
@@ -1049,59 +1106,18 @@
       }, { passive: true });
     }
 
-    // Sync live typing inside the iframe back to the Accessible Action Deck
     doc.querySelectorAll('input, select, textarea').forEach(inp => {
       if (inp.__a11yInputWired) return;
       inp.__a11yInputWired = true;
       inp.addEventListener('change', () => scanClientIframeDom());
     });
-
-    // Intercept <a href="..."> clicks
-    doc.querySelectorAll('a[href]').forEach(a => {
-      if (a.__a11yWired) return;
-      a.__a11yWired = true;
-      a.addEventListener('click', (e) => {
-        const rawHref = a.getAttribute('href') || '';
-        if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
-        e.preventDefault();
-        try {
-          const resolved = new URL(rawHref, baseUrl).href;
-          loadExternalWebsite(resolved, true);
-        } catch (_) {}
-      });
-    });
-
-    // Intercept <form> submissions
-    doc.querySelectorAll('form').forEach(form => {
-      if (form.__a11yWired) return;
-      form.__a11yWired = true;
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const summaryPairs = [];
-        form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea').forEach(inp => {
-          const name = inp.name || inp.id || inp.getAttribute('placeholder') || inp.type;
-          const val = inp.type === 'password' && inp.value ? '••••••••' : inp.value;
-          if (val) summaryPairs.push(`${name}: "${val}"`);
-        });
-        let banner = doc.querySelector('.__a11y_submitted_banner');
-        if (!banner) {
-          banner = doc.createElement('div');
-          banner.className = '__a11y_submitted_banner';
-          banner.setAttribute('role', 'status');
-          doc.body.prepend(banner);
-        }
-        let host = baseUrl;
-        try { host = new URL(baseUrl).hostname; } catch (_) {}
-        banner.textContent = `✓ Form Submitted on ${host} — ${summaryPairs.join(' • ') || 'Submitted successfully'}`;
-        scanClientIframeDom();
-      });
-    });
   }
 
   // ============================================================================
-  // CLIENT-SIDE LIVE DOM ENGINE (Prioritizes Form Inputs & Buttons First!)
+  // CLIENT-SIDE LIVE DOM ENGINE
   // ============================================================================
   function loadClientPortal(siteKey, pushHistory = true) {
+    setFlowStep(1);
     currentExternalUrl = null;
     const portal = PORTAL_PAGES[siteKey] || PORTAL_PAGES['/sites/clinic'];
     currentSiteKey = PORTAL_PAGES[siteKey] ? siteKey : '/sites/clinic';
@@ -1129,6 +1145,7 @@
         });
       }
       scanClientIframeDom();
+      setFlowStep(2);
     }, 60);
   }
 
@@ -1136,7 +1153,6 @@
     const doc = viewportIframe.contentDocument;
     if (!doc || !doc.body) return null;
 
-    // Crucial: Scan form inputs, selects, textareas, and buttons FIRST so navbar links never crowd out form fields!
     const highPriorityNodes = Array.from(
       doc.querySelectorAll('input:not([type="hidden"]), select, textarea, button, [role="button"], [role="checkbox"]')
     );
@@ -1171,7 +1187,6 @@
       const placeholder = el.getAttribute('placeholder');
       if (placeholder && placeholder.trim()) return placeholder.trim();
 
-      // Check previous sibling label or text
       const prev = el.previousElementSibling;
       if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN') && prev.innerText.trim()) {
         return prev.innerText.trim().slice(0, 70);
@@ -1217,7 +1232,6 @@
       const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag === 'select' ? 'combobox' : type === 'checkbox' ? 'checkbox' : 'textbox');
       const category = getCategory(tag, type, role);
 
-      // Always include form inputs even if slightly below fold so the agent and Action Deck can fill them!
       const maxBottom = category === 'input' ? win.innerHeight + 900 : win.innerHeight + 60;
       if (rect.bottom < 0 || rect.right < 0 || rect.top > maxBottom || rect.left > win.innerWidth) continue;
 
@@ -1267,6 +1281,8 @@
       }
     });
 
+    if (alerts.length > 0) setFlowStep(3);
+
     const portalInfo = PORTAL_PAGES[currentSiteKey];
     const activeUrl = currentExternalUrl || (portalInfo ? portalInfo.url : currentSiteKey);
     const activeTitle = doc.title || (portalInfo ? portalInfo.title : activeUrl);
@@ -1287,9 +1303,6 @@
     return state;
   }
 
-  /**
-   * Reliably sets an input or textarea value across vanilla DOM, React, Vue, and Moodle forms
-   */
   function setNativeFormValue(domNode, val) {
     const strVal = String(val ?? '');
     domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1362,6 +1375,7 @@
       await new Promise(r => setTimeout(r, 250));
       summary = `Scrolled page ${dir}`;
     } else if (action === 'click' && domNode) {
+      setFlowStep(2);
       domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
       if (domNode.hasAttribute('data-portal')) {
         loadClientPortal(domNode.getAttribute('data-portal'));
@@ -1378,9 +1392,11 @@
       }
       summary = `Clicked #${targetEl.id} "${targetEl.label}"`;
     } else if (action === 'type' && domNode) {
+      setFlowStep(2);
       setNativeFormValue(domNode, value);
-      summary = `Typed "${value}" into #${targetEl.id} (${targetEl.label})`;
+      summary = `Filled #${targetEl.id} (${targetEl.label}) with "${value}"`;
     } else if (action === 'select' && domNode) {
+      setFlowStep(2);
       domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
       let matchedValue = String(value ?? '');
       if (targetEl.options) {
@@ -1451,9 +1467,6 @@
     return bestScore >= 12 ? best : null;
   }
 
-  /**
-   * Generates a smart sample value for an input field when the user asks to "Auto-fill form"
-   */
   function getSmartSampleValueForField(el) {
     const hay = `${el.label} ${el.placeholder} ${el.type}`.toLowerCase();
     if (hay.includes('matric') || hay.includes('username') || hay.includes('student') || hay.includes('user')) return 'NOU23104928';
@@ -1463,7 +1476,7 @@
     if (hay.includes('pickup') || hay.includes('address') || hay.includes('street')) return '240 Oak Street, Suite 4B';
     if (hay.includes('destination') || hay.includes('dropoff')) return 'CareBridge Medical Center';
     if (hay.includes('account')) return 'UTIL-99201';
-    if (hay.includes('course') || hay.includes('search') || hay.includes('filter')) return 'CIT101 Computer Fundamentals';
+    if (hay.includes('course') || hay.includes('search') || hay.includes('filter') || hay.includes('query')) return 'CIT101 Computer Fundamentals';
     if (hay.includes('reason') || hay.includes('note') || hay.includes('instruction')) return 'Please provide wheelchair-accessible entrance assistance';
     if (hay.includes('name') || hay.includes('patient') || hay.includes('rider')) return 'Maya Lin';
     return 'Maya Lin';
@@ -1475,7 +1488,6 @@
     const raw = String(command || '').trim();
     const lower = raw.toLowerCase();
 
-    // 1. Check if the user asked to "fill the form" / "auto-fill" / "fill all fields"
     if (/^(?:auto[-\s]?fill|fill\s+(?:out\s+|in\s+)?(?:the\s+|all\s+)?(?:form|fields|inputs)|complete\s+(?:the\s+)?form)$/i.test(lower)) {
       const inputEls = elements.filter(e => e.category === 'input' && e.tag !== 'select');
       for (const inp of inputEls) {
@@ -1489,14 +1501,13 @@
       }
       if (steps.length > 0) {
         return {
-          engine: 'A11yPilot Smart Form Auto-Filler',
-          spokenResponse: `Auto-filled ${steps.length} form fields on the page.`,
+          engine: 'Smart Form Auto-Filler',
+          spokenResponse: `Auto-filled ${steps.length} form fields on the page. Step 3: Click Submit when ready.`,
           steps
         };
       }
     }
 
-    // 2. Summary request
     if (/^(what|describe|summarize|read|where am i|help|list)/.test(lower) && !/click|type|fill|select|book|add|order|input|set/.test(lower)) {
       const inputCount = elements.filter(e => e.category === 'input').length;
       const actionCount = elements.filter(e => e.category === 'action' || e.category === 'toggle').length;
@@ -1504,7 +1515,7 @@
       const alertPart = state.alerts.length ? ` Active alert: ${state.alerts.join(' ')}` : '';
       const summary = `You are on "${state.title}". There are ${elements.length} visible controls: ${inputCount} fillable form fields, ${actionCount} buttons, and ${linkCount} links.${alertPart}`;
       return {
-        engine: 'A11yPilot Semantic DOM Grounding',
+        engine: 'Local Semantic Grounding',
         spokenResponse: summary,
         steps: [{ action: 'narrate', value: summary, explanation: summary }]
       };
@@ -1518,7 +1529,6 @@
     for (const clause of clauses) {
       const cLow = clause.toLowerCase();
 
-      // Direct URL navigation
       const navMatch = clause.match(/^(?:go\s+to|navigate\s+to|open|visit|load)\s+(https?:\/\/\S+|[a-z0-9-]+(?:\.[a-z0-9-]+)+\S*)$/i);
       if (navMatch) {
         steps.push({ action: 'navigate', value: navMatch[1], explanation: `Navigate to ${navMatch[1]}` });
@@ -1531,10 +1541,6 @@
         continue;
       }
 
-      // Direct badge typing:
-      // - "type Maya Lin in #1" / "input NOU123 in 1"
-      // - "fill #1 with Maya Lin" / "set #1 to Maya Lin"
-      // - "#1: Maya Lin" or "#1 = Maya Lin"
       const badgeTypeA = clause.match(/^(?:type|enter|write|input|put)\s+["']?(.+?)["']?\s+(?:in|into|on|to|for)\s+(?:#|badge\s*|field\s*|input\s*|element\s*)?(\d+)$/i);
       const badgeTypeB = clause.match(/^(?:fill|set|input)\s+(?:#|badge\s*|field\s*|input\s*|element\s*)?(\d+)\s+(?:with|to|as|=|:)\s+["']?(.+?)["']?$/i);
       const badgeTypeC = clause.match(/^#(\d+)\s*(?::|=|\s+is\s+|\s+with\s+)\s*["']?(.+?)["']?$/i);
@@ -1554,7 +1560,6 @@
         }
       }
 
-      // Direct badge click: "click #5", "tap 5", "#5"
       const badgeClick = clause.match(/^(?:click|press|tap|select|check|toggle)?\s*(?:#|badge\s*|element\s*|number\s*)?(\d+)$/i);
       if (badgeClick) {
         const el = elements.find(e => e.id === Number(badgeClick[1]));
@@ -1569,10 +1574,6 @@
         }
       }
 
-      // Natural language typing patterns:
-      // Pattern 1: "type/enter/write/input/put X in/into/for/on Field"
-      // Pattern 2: "fill/set/input Field with/to/as X"
-      // Pattern 3: "Field is/: X" (e.g. "username is NOU2310492", "patient name: Maya Lin")
       let fieldPhrase = null;
       let textValue = null;
 
@@ -1607,7 +1608,6 @@
         }
       }
 
-      // Pattern 4: Bare "type X" or "input X" without naming a field -> fills first empty input (or first text input)
       const bareType = clause.match(/^(?:type|enter|write|input)\s+["']?(.+?)["']?$/i);
       if (bareType) {
         const val = bareType[1].trim();
@@ -1624,7 +1624,6 @@
         }
       }
 
-      // Dropdown selection
       const selectMatch = clause.match(/^(?:select|choose|pick)\s+["']?(.+?)["']?(?:\s+(?:from|in|under)\s+(.+))?$/i);
       if (selectMatch) {
         const optionQuery = selectMatch[1].trim();
@@ -1671,52 +1670,121 @@
         }
       } else {
         return {
-          engine: 'A11yPilot Semantic DOM Grounding',
-          spokenResponse: `I couldn't match "${raw}" to a control on this page. Try "Auto-fill form", "Type [text] in #1", or click any field in the Accessible Action Deck.`,
+          engine: 'Local Semantic Grounding',
+          spokenResponse: `Could not match "${raw}". Try tapping "Auto-Fill Form" or typing "Fill #1 with [text]".`,
           steps: []
         };
       }
     }
 
     return {
-      engine: 'A11yPilot Semantic DOM Grounding',
+      engine: 'Local Semantic Grounding',
       spokenResponse: steps.map(s => s.explanation).join(', then ') + '.',
       steps
     };
   }
 
-  async function planClientGemini(command, state, apiKey) {
+  // ============================================================================
+  // MULTI-PROVIDER AI PLANNERS: GEMINI 3.8 FLASH & DEEPSEEK V3/R1
+  // ============================================================================
+  function buildDomAgentPrompt(command, state) {
     const elementLines = state.elements.map(e => {
       const optStr = e.options ? ` options=[${e.options.map(o => `"${o.text}"`).join(', ')}]` : '';
-      return `#${e.id} [${e.tag}/${e.type}] label="${e.label}"${optStr}`;
+      const valStr = e.value ? ` currentValue="${e.value}"` : '';
+      return `#${e.id} [${e.tag}/${e.type}] label="${e.label}"${valStr}${optStr}`;
     }).join('\n');
 
-    const prompt = `You are A11yPilot, an accessibility browser agent.
-Page: "${state.title}" (${state.url})
+    return `You are A11yPilot, an accessibility browser agent helping a user interact with a webpage.
+Page Title: "${state.title}" (${state.url})
 Interactive Elements (#1..#${state.elements.length}):
 ${elementLines}
 
 User Command: "${command}"
-Return JSON with:
-{ "spokenResponse": "...", "steps": [{ "action": "click"|"type"|"select"|"scroll"|"navigate"|"narrate", "elementId": 1, "value": "...", "explanation": "..." }] }`;
+Return ONLY valid JSON with this exact structure:
+{
+  "spokenResponse": "Concise 1-sentence confirmation of what you are doing",
+  "steps": [
+    { "action": "click" | "type" | "select" | "scroll" | "navigate" | "narrate", "elementId": 1, "value": "text or option", "explanation": "Step description" }
+  ]
+}`;
+  }
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
-        })
+  async function planWithGeminiModel(command, state, apiKey, preferredModel) {
+    const prompt = buildDomAgentPrompt(command, state);
+    // Try preferred model (e.g. gemini-3.8-flash) first, with automatic cascade if region/key falls back
+    const candidateModels = Array.from(new Set([
+      preferredModel || 'gemini-3.8-flash',
+      'gemini-3.8-flash',
+      'gemini-3.0-flash',
+      'gemini-2.0-flash'
+    ]));
+
+    let lastErr = null;
+    for (const modelId of candidateModels) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+            })
+          }
+        );
+        if (!res.ok) {
+          lastErr = new Error(`Gemini (${modelId}) HTTP ${res.status}`);
+          continue;
+        }
+        const data = await res.json();
+        const parsed = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+        return {
+          engine: preferredModel || modelId,
+          spokenResponse: parsed.spokenResponse || 'Executed requested steps.',
+          steps: Array.isArray(parsed.steps) ? parsed.steps : []
+        };
+      } catch (err) {
+        lastErr = err;
       }
-    );
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    }
+    throw lastErr || new Error('Gemini API request failed.');
+  }
+
+  async function planWithDeepSeekModel(command, state, apiKey, modelId) {
+    const prompt = buildDomAgentPrompt(command, state);
+    const chosenModel = modelId || 'deepseek-chat';
+
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: chosenModel,
+        messages: [
+          { role: 'system', content: 'You are A11yPilot, an accessible browser automation agent. Always respond in valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`DeepSeek HTTP ${res.status}: ${errText.slice(0, 120)}`);
+    }
+
     const data = await res.json();
-    const parsed = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+    const rawContent = data?.choices?.[0]?.message?.content || '{}';
+    const cleanedJson = rawContent.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    const parsed = JSON.parse(cleanedJson);
+
     return {
-      engine: 'Gemini 2.5 Flash + DOM',
-      spokenResponse: parsed.spokenResponse || 'Executed requested steps.',
+      engine: chosenModel === 'deepseek-reasoner' ? 'DeepSeek R1' : 'DeepSeek V3',
+      spokenResponse: parsed.spokenResponse || 'Executed requested steps via DeepSeek.',
       steps: Array.isArray(parsed.steps) ? parsed.steps : []
     };
   }
@@ -1728,77 +1796,37 @@ Return JSON with:
     let presets = [];
     if (url.includes('/sites/grocery')) {
       presets = [
-        {
-          label: '🍎 Add Apples & Oat Milk to Cart',
-          cmd: 'Click Add Organic Honeycrisp Apples to Cart, then click Add Barista Oat Milk to Cart'
-        },
-        {
-          label: '📦 Fill Ramp Note & Place Order',
-          cmd: 'Type Please use side ramp entrance in Driver Instructions, select Place on raised porch table, and click Place Grocery Order'
-        },
-        {
-          label: '🪄 Auto-Fill All Fields',
-          cmd: 'Auto-fill form'
-        }
+        { label: 'Add Apples & Oat Milk', cmd: 'Click Add Organic Honeycrisp Apples to Cart, then click Add Barista Oat Milk to Cart' },
+        { label: 'Fill Ramp Note & Order', cmd: 'Type Please use side ramp entrance in Driver Instructions, select Place on raised porch table, and click Place Grocery Order' }
       ];
     } else if (url.includes('/sites/civic')) {
       presets = [
-        {
-          label: '🚐 Book ADA Wheelchair Van',
-          cmd: 'Type Jordan Rivera in Rider Pass Name, type 240 Oak Street in Pickup Location, type CareBridge Medical Center in Destination, and click Request Accessible Van'
-        },
-        {
-          label: '⚡ Enroll Utility Medical Discount',
-          cmd: 'Type UTIL-99201 in Utility Account Number, select Power Wheelchair Charging Station, and click Enroll in Medical Baseline Rate'
-        }
+        { label: 'Book Wheelchair Van', cmd: 'Type Jordan Rivera in Rider Pass Name, type 240 Oak Street in Pickup Location, type CareBridge Medical Center in Destination, and click Request Accessible Van' },
+        { label: 'Enroll Utility Discount', cmd: 'Type UTIL-99201 in Utility Account Number, select Power Wheelchair Charging Station, and click Enroll in Medical Baseline Rate' }
       ];
     } else if (url.includes('/sites/clinic')) {
       presets = [
-        {
-          label: '🩺 Auto-Fill & Confirm Maya Lin Booking',
-          cmd: 'Type Maya Lin in Patient Full Name, type maya@lin.org in Email Address, select Dr. Elena Chen, check Wheelchair Accessible Exam Room, and click Confirm Appointment Booking'
-        },
-        {
-          label: '🪄 Auto-Fill Form Fields',
-          cmd: 'Auto-fill form'
-        },
-        {
-          label: '🎓 Load elearn.nou.edu.ng',
-          cmd: 'Go to elearn.nou.edu.ng'
-        }
+        { label: 'Auto-Fill & Confirm Maya Lin', cmd: 'Type Maya Lin in Patient Full Name, type maya@lin.org in Email Address, select Dr. Elena Chen, check Wheelchair Accessible Exam Room, and click Confirm Appointment Booking' },
+        { label: 'Open NOU e-Learning', cmd: 'Go to elearn.nou.edu.ng' }
       ];
     } else {
-      // Dynamic presets generated from the live external website's actual inputs & buttons!
-      presets.push({
-        label: '🪄 Auto-Fill All Form Fields',
-        cmd: 'Auto-fill form'
-      });
       const inputs = elements.filter(e => e.category === 'input' && e.tag !== 'select');
       if (inputs.length >= 2) {
         const s1 = getSmartSampleValueForField(inputs[0]);
         const s2 = getSmartSampleValueForField(inputs[1]);
         presets.push({
-          label: `✍️ Fill #${inputs[0].id} & #${inputs[1].id}`,
+          label: `Fill #${inputs[0].id} & #${inputs[1].id}`,
           cmd: `Type ${s1} in #${inputs[0].id}, then type ${s2} in #${inputs[1].id}`
-        });
-      } else if (inputs.length === 1) {
-        const s1 = getSmartSampleValueForField(inputs[0]);
-        presets.push({
-          label: `⌨️ Fill #${inputs[0].id} (${inputs[0].label.slice(0, 20)})`,
-          cmd: `Type ${s1} in #${inputs[0].id}`
         });
       }
       const firstBtn = elements.find(e => e.category === 'action');
       if (firstBtn) {
         presets.push({
-          label: `👆 Click #${firstBtn.id} (${firstBtn.label.slice(0, 22)})`,
+          label: `Click #${firstBtn.id} (${firstBtn.label.slice(0, 20)})`,
           cmd: `Click #${firstBtn.id}`
         });
       }
-      presets.push({
-        label: '🔊 Summarize Website',
-        cmd: 'What is on this page?'
-      });
+      presets.push({ label: 'Summarize Page', cmd: 'What is on this page?' });
     }
 
     presetPromptsContainer.innerHTML = '';
@@ -1816,7 +1844,12 @@ Return JSON with:
 
     document.querySelectorAll('.preset-site-btn').forEach(btn => {
       const sitePath = btn.getAttribute('data-site');
-      btn.classList.toggle('active', url.includes(sitePath));
+      const extUrl = btn.getAttribute('data-external');
+      if (sitePath) {
+        btn.classList.toggle('active', url.includes(sitePath));
+      } else if (extUrl) {
+        btn.classList.toggle('active', url.includes('nou.edu.ng'));
+      }
     });
   }
 
@@ -1843,7 +1876,7 @@ Return JSON with:
       const badge = document.createElement('span');
       badge.className = 'som-badge';
       badge.textContent = `#${el.id}`;
-      badge.title = `Click to interact with #${el.id}: ${el.label}`;
+      badge.title = `Tap to interact with #${el.id}: ${el.label}`;
 
       const tooltip = document.createElement('span');
       tooltip.className = 'som-tooltip';
@@ -1865,32 +1898,30 @@ Return JSON with:
   }
 
   function renderAccessibleDeck(elements) {
-    deckPanelControls.innerHTML = '';
-
     const inputs = elements.filter(e => e.category === 'input');
-    const actions = elements.filter(e => e.category === 'action' || e.category === 'toggle');
-    const links = elements.filter(e => e.category === 'navigation');
+    const actionsAndLinks = elements.filter(e => e.category !== 'input');
 
-    if (inputs.length > 0) {
-      const sec = document.createElement('div');
+    countInputs.textContent = String(inputs.length);
+    countActions.textContent = String(actionsAndLinks.length);
+    if (mobileInputsCount) mobileInputsCount.textContent = String(inputs.length);
+    if (mobileActionsCount) mobileActionsCount.textContent = String(actionsAndLinks.length);
+
+    // 1. Render Form Inputs Tab
+    deckPanelInputs.innerHTML = '';
+    if (inputs.length === 0) {
+      deckPanelInputs.innerHTML = `<div class="local-info-box">No fillable text inputs detected on this view. Switch to the <strong>Buttons &amp; Links</strong> tab to navigate further.</div>`;
+    } else {
       const headerRow = document.createElement('div');
-      headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+      headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+      headerRow.innerHTML = `<span class="section-label">Step 2: Fill Webpage Fields (${inputs.length})</span>`;
 
-      const heading = document.createElement('div');
-      heading.className = 'section-label';
-      heading.style.marginBottom = '0';
-      heading.textContent = `Form Fields & Inputs (${inputs.length})`;
-
-      const autoFillBtn = document.createElement('button');
-      autoFillBtn.type = 'button';
-      autoFillBtn.className = 'apply-btn';
-      autoFillBtn.style.cssText = 'min-height:28px;font-size:11.5px;padding:0 10px;';
-      autoFillBtn.textContent = '🪄 Auto-Fill All Fields';
-      autoFillBtn.addEventListener('click', () => runAgentCommand('Auto-fill form'));
-
-      headerRow.appendChild(heading);
-      headerRow.appendChild(autoFillBtn);
-      sec.appendChild(headerRow);
+      const autoBtn = document.createElement('button');
+      autoBtn.type = 'button';
+      autoBtn.className = 'autofill-cta-btn';
+      autoBtn.textContent = 'Auto-Fill All';
+      autoBtn.addEventListener('click', () => runAgentCommand('Auto-fill form'));
+      headerRow.appendChild(autoBtn);
+      deckPanelInputs.appendChild(headerRow);
 
       const list = document.createElement('div');
       list.className = 'a11y-card-list';
@@ -1907,7 +1938,7 @@ Return JSON with:
         topRow.className = 'card-top-row';
         topRow.innerHTML = `
           <span class="badge-pill input-pill">#${el.id}</span>
-          <span class="control-name">${escapeHtml(el.label)}</span>
+          <label class="control-name" for="deck-input-${el.id}">${escapeHtml(el.label)}</label>
           <span class="control-role-tag">${escapeHtml(el.tag === 'select' ? 'dropdown' : el.type)}</span>
         `;
         card.appendChild(topRow);
@@ -1917,7 +1948,7 @@ Return JSON with:
 
         if (el.tag === 'select' && Array.isArray(el.options)) {
           const sel = document.createElement('select');
-          sel.setAttribute('aria-label', `Select option for ${el.label}`);
+          sel.id = `deck-input-${el.id}`;
           for (const opt of el.options) {
             const o = document.createElement('option');
             o.value = opt.value;
@@ -1931,21 +1962,21 @@ Return JSON with:
           fieldRow.appendChild(sel);
         } else {
           const inp = document.createElement('input');
+          inp.id = `deck-input-${el.id}`;
           inp.type = 'text';
           inp.value = el.value || '';
-          inp.placeholder = el.placeholder || `Type value for #${el.id} (${el.label})...`;
-          inp.setAttribute('aria-label', `Type into ${el.label}`);
+          inp.placeholder = el.placeholder || `Enter ${el.label}...`;
 
           const applyBtn = document.createElement('button');
           applyBtn.type = 'button';
           applyBtn.className = 'apply-btn';
-          applyBtn.textContent = 'Fill Field';
+          applyBtn.textContent = 'Fill';
 
           const triggerType = () => {
             executeDirectAction(
               { action: 'type', elementId: el.id, value: inp.value },
               el.rect,
-              `Typing in #${el.id}`
+              `Filling #${el.id}`
             );
           };
 
@@ -1965,78 +1996,72 @@ Return JSON with:
         list.appendChild(card);
       }
 
-      sec.appendChild(list);
-      deckPanelControls.appendChild(sec);
-    }
+      deckPanelInputs.appendChild(list);
 
-    if (actions.length > 0) {
-      const sec = document.createElement('div');
-      const heading = document.createElement('div');
-      heading.className = 'section-label';
-      heading.textContent = `Buttons & Checkboxes (${actions.length})`;
-      sec.appendChild(heading);
+      // Step 3 CTA: Primary Submit button right at the bottom of the Form Inputs tab!
+      const primarySubmitEl = elements.find(e =>
+        e.category === 'action' && /submit|confirm|book|order|request|enroll|log\s*in|sign\s*in/i.test(e.label)
+      ) || elements.find(e => e.category === 'action');
 
-      const list = document.createElement('div');
-      list.className = 'a11y-card-list';
-
-      for (const el of actions) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'big-action-btn';
-        const stateSuffix = el.type === 'checkbox' ? ` (${el.value === 'checked' ? '✓ Checked' : 'Unchecked'})` : '';
-        btn.innerHTML = `
-          <span style="display:flex;align-items:center;gap:9px;">
-            <span class="badge-pill">#${el.id}</span>
-            <span>${escapeHtml(el.label)}${escapeHtml(stateSuffix)}</span>
-          </span>
-          <span class="control-role-tag">Click →</span>
-        `;
-        btn.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
-        btn.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
-        btn.addEventListener('focus', () => highlightElementOnViewport(el.id, true));
-        btn.addEventListener('blur', () => highlightElementOnViewport(el.id, false));
-        btn.addEventListener('click', () => {
-          executeDirectAction({ action: 'click', elementId: el.id }, el.rect, `Clicking #${el.id}`);
+      if (primarySubmitEl) {
+        const submitCard = document.createElement('button');
+        submitCard.type = 'button';
+        submitCard.className = 'primary-btn';
+        submitCard.style.cssText = 'width:100%;min-height:46px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;';
+        submitCard.innerHTML = `<span>Step 3: ${escapeHtml(primarySubmitEl.label)} (#${primarySubmitEl.id})</span> <span>→</span>`;
+        submitCard.addEventListener('click', () => {
+          executeDirectAction({ action: 'click', elementId: primarySubmitEl.id }, primarySubmitEl.rect, `Submitting #${primarySubmitEl.id}`);
         });
-        list.appendChild(btn);
+        deckPanelInputs.appendChild(submitCard);
       }
-
-      sec.appendChild(list);
-      deckPanelControls.appendChild(sec);
     }
 
-    if (links.length > 0) {
-      const sec = document.createElement('div');
-      const heading = document.createElement('div');
-      heading.className = 'section-label';
-      heading.textContent = `Page Links (${links.length})`;
-      sec.appendChild(heading);
+    // 2. Render Buttons & Links Tab with Instant Filter
+    deckPanelActions.innerHTML = '';
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.className = 'deck-filter-input';
+    filterInput.placeholder = 'Filter buttons or links by name or #badge...';
+    filterInput.setAttribute('aria-label', 'Filter buttons and links');
+    deckPanelActions.appendChild(filterInput);
 
-      const list = document.createElement('div');
-      list.className = 'a11y-card-list';
+    const actionList = document.createElement('div');
+    actionList.className = 'a11y-card-list';
 
-      for (const el of links) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'big-action-btn';
-        btn.innerHTML = `
-          <span style="display:flex;align-items:center;gap:9px;">
-            <span class="badge-pill">#${el.id}</span>
-            <span>${escapeHtml(el.label)}</span>
-          </span>
-          <span class="control-role-tag">Link ↗</span>
-        `;
-        btn.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
-        btn.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
-        btn.addEventListener('click', () => {
-          executeDirectAction({ action: 'click', elementId: el.id }, el.rect, `Opening #${el.id}`);
-        });
-        list.appendChild(btn);
-      }
+    for (const el of actionsAndLinks) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'big-action-btn';
+      btn.dataset.filterText = `#${el.id} ${el.label}`.toLowerCase();
 
-      sec.appendChild(list);
-      deckPanelControls.appendChild(sec);
+      const stateSuffix = el.type === 'checkbox' ? ` (${el.value === 'checked' ? '✓ Checked' : 'Unchecked'})` : '';
+      const kindLabel = el.category === 'navigation' ? 'Link ↗' : el.type === 'checkbox' ? 'Toggle' : 'Button →';
+
+      btn.innerHTML = `
+        <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+          <span class="badge-pill">#${el.id}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(el.label)}${escapeHtml(stateSuffix)}</span>
+        </span>
+        <span class="control-role-tag" style="flex-shrink:0;">${kindLabel}</span>
+      `;
+      btn.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
+      btn.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
+      btn.addEventListener('focus', () => highlightElementOnViewport(el.id, true));
+      btn.addEventListener('blur', () => highlightElementOnViewport(el.id, false));
+      btn.addEventListener('click', () => {
+        executeDirectAction({ action: 'click', elementId: el.id }, el.rect, `Clicking #${el.id}`);
+      });
+      actionList.appendChild(btn);
     }
+
+    filterInput.addEventListener('input', () => {
+      const q = filterInput.value.toLowerCase().trim();
+      actionList.querySelectorAll('.big-action-btn').forEach(b => {
+        b.style.display = (!q || b.dataset.filterText.includes(q)) ? 'flex' : 'none';
+      });
+    });
+
+    deckPanelActions.appendChild(actionList);
   }
 
   function renderStepHistory(history) {
@@ -2045,7 +2070,7 @@ Return JSON with:
     stepLogList.innerHTML = '';
 
     if (items.length === 0) {
-      stepLogList.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">No actions recorded yet. Run an agent command or click any badge to see the visual trace.</div>`;
+      stepLogList.innerHTML = `<div class="local-info-box">No actions recorded yet. Tap "Auto-Fill Form" or click any control to see the step-by-step trace.</div>`;
       return;
     }
 
@@ -2134,68 +2159,58 @@ Return JSON with:
     if (!command) return;
 
     runAgentBtn.disabled = true;
-    runAgentBtn.textContent = 'Acting...';
-    setAgentAnnouncement(`Planning & executing: "${command}"...`, false);
+    runAgentBtn.textContent = 'Working...';
+    setAgentAnnouncement(`Executing: "${command}"...`, false);
 
     try {
-      if (!usePlaywrightBackend) {
-        const initialState = scanClientIframeDom();
-        let plan = null;
-        if (geminiApiKey) {
-          try {
-            plan = await planClientGemini(command, initialState, geminiApiKey);
-          } catch (_) {
-            plan = planClientGrounding(command, initialState);
-          }
-        } else {
+      const initialState = scanClientIframeDom();
+      let plan = null;
+
+      if (aiProvider === 'deepseek' && deepseekApiKey) {
+        try {
+          plan = await planWithDeepSeekModel(command, initialState, deepseekApiKey, deepseekModel);
+        } catch (_) {
           plan = planClientGrounding(command, initialState);
         }
-
-        if (plan.engine) activeEngineBadge.textContent = plan.engine.slice(0, 32);
-
-        for (const step of plan.steps) {
-          if (step.action === 'narrate') continue;
-          const { record } = await performClientSingleAction(step);
-          if (record.rect) {
-            moveAgentCursorToRect(record.rect, `${step.action.toUpperCase()} #${record.elementId || ''}`, 900);
-            await new Promise(r => setTimeout(r, 380));
-          }
+      } else if (aiProvider === 'gemini' && geminiApiKey) {
+        try {
+          plan = await planWithGeminiModel(command, initialState, geminiApiKey, geminiModel);
+        } catch (_) {
+          plan = planClientGrounding(command, initialState);
         }
-
-        const finalState = scanClientIframeDom();
-        let spoken = plan.spokenResponse;
-        if (finalState && finalState.alerts && finalState.alerts.length > 0) {
-          spoken += ` Page alert: ${finalState.alerts.join(' ')}`;
-        }
-        setAgentAnnouncement(spoken);
-        return;
+      } else {
+        plan = planClientGrounding(command, initialState);
       }
 
-      const res = await fetch('/api/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, apiKey: geminiApiKey })
-      });
-      const data = await res.json();
-      if (data.engine) activeEngineBadge.textContent = data.engine.slice(0, 32);
+      if (plan.engine) activeEngineBadge.textContent = plan.engine.slice(0, 26);
 
-      if (Array.isArray(data.executedSteps)) {
-        for (const step of data.executedSteps) {
-          if (step.rect) {
-            moveAgentCursorToRect(step.rect, `${step.action.toUpperCase()} #${step.elementId || ''}`, 900);
-            await new Promise(r => setTimeout(r, 340));
-          }
+      for (const step of plan.steps) {
+        if (step.action === 'narrate') continue;
+        const { record } = await performClientSingleAction(step);
+        if (record.rect) {
+          moveAgentCursorToRect(record.rect, `${step.action.toUpperCase()} #${record.elementId || ''}`, 900);
+          await new Promise(r => setTimeout(r, 350));
         }
       }
-      if (data.state) applyBrowserState(data.state);
-      setAgentAnnouncement(data.spokenResponse || 'Completed requested browser actions.');
+
+      const finalState = scanClientIframeDom();
+      let spoken = plan.spokenResponse;
+      if (finalState && finalState.alerts && finalState.alerts.length > 0) {
+        setFlowStep(3);
+        spoken += ` ${finalState.alerts.join(' ')}`;
+      }
+      setAgentAnnouncement(spoken);
     } catch (err) {
       setAgentAnnouncement(`Agent error: ${err.message}`);
     } finally {
       runAgentBtn.disabled = false;
-      runAgentBtn.textContent = 'Run Agent';
+      runAgentBtn.textContent = 'Run';
     }
   }
+
+  quickAutofillCta.addEventListener('click', () => {
+    runAgentCommand('Auto-fill form');
+  });
 
   // Quick-Type Modal
   function openQuickFieldModal(el) {
@@ -2257,14 +2272,16 @@ Return JSON with:
         value: val
       },
       el.rect,
-      `${el.tag === 'select' ? 'Selecting' : 'Typing'} #${el.id}`
+      `${el.tag === 'select' ? 'Selecting' : 'Filling'} #${el.id}`
     );
   }
 
-  quickFieldCancel.addEventListener('click', () => {
+  const closeQuickModal = () => {
     quickFieldModal.classList.remove('open');
     activeQuickElement = null;
-  });
+  };
+  quickFieldCancel.addEventListener('click', closeQuickModal);
+  quickFieldCancelTop.addEventListener('click', closeQuickModal);
   quickFieldSubmit.addEventListener('click', submitQuickFieldModal);
 
   // Navigation Events
@@ -2292,10 +2309,11 @@ Return JSON with:
   document.querySelectorAll('.preset-site-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const site = btn.getAttribute('data-site');
-      if (!usePlaywrightBackend) {
-        loadClientPortal(site);
-      } else {
-        executeDirectAction({ action: 'navigate', value: site });
+      const extUrl = btn.getAttribute('data-external');
+      if (extUrl) {
+        loadExternalWebsite(extUrl, true);
+      } else if (site) {
+        loadClientPortal(site, true);
       }
     });
   });
@@ -2311,11 +2329,12 @@ Return JSON with:
   });
 
   const toggleTtsBtn = document.getElementById('toggle-tts-btn');
+  const ttsBtnLabel = document.getElementById('tts-btn-label');
   toggleTtsBtn.addEventListener('click', () => {
     ttsEnabled = !ttsEnabled;
     toggleTtsBtn.classList.toggle('active', ttsEnabled);
     toggleTtsBtn.setAttribute('aria-pressed', String(ttsEnabled));
-    toggleTtsBtn.textContent = `🔊 Voice Readout: ${ttsEnabled ? 'ON' : 'OFF'}`;
+    if (ttsBtnLabel) ttsBtnLabel.textContent = ttsEnabled ? 'Voice On' : 'Voice Off';
     if (ttsEnabled) {
       speakText('Voice readout enabled. ' + agentSpeechText.textContent);
     }
@@ -2333,25 +2352,93 @@ Return JSON with:
     const enabled = document.body.classList.toggle('large-text');
     toggleLargeTextBtn.classList.toggle('active', enabled);
     toggleLargeTextBtn.setAttribute('aria-pressed', String(enabled));
-    if (!usePlaywrightBackend) setTimeout(scanClientIframeDom, 60);
+    setTimeout(scanClientIframeDom, 60);
   });
 
-  openGeminiModalBtn.addEventListener('click', () => {
-    geminiKeyInput.value = geminiApiKey;
-    geminiModal.classList.add('open');
-    geminiKeyInput.focus();
+  // ============================================================================
+  // AI PROVIDER & MODEL SETTINGS MODAL (Gemini 3.8 Flash + DeepSeek V3/R1)
+  // ============================================================================
+  function selectProviderTab(prov) {
+    aiProvider = prov;
+    document.querySelectorAll('.provider-card').forEach(c => {
+      c.classList.toggle('active', c.getAttribute('data-provider') === prov);
+    });
+    document.getElementById('provider-panel-gemini').style.display = prov === 'gemini' ? 'block' : 'none';
+    document.getElementById('provider-panel-deepseek').style.display = prov === 'deepseek' ? 'block' : 'none';
+    document.getElementById('provider-panel-local').style.display = prov === 'local' ? 'block' : 'none';
+    apiTestStatus.className = 'api-test-status';
+  }
+
+  document.querySelectorAll('.provider-card').forEach(card => {
+    card.addEventListener('click', () => selectProviderTab(card.getAttribute('data-provider')));
   });
-  geminiModalClose.addEventListener('click', () => geminiModal.classList.remove('open'));
-  geminiModalSave.addEventListener('click', () => {
+
+  openAiModalBtn.addEventListener('click', () => {
+    geminiModelSelect.value = geminiModel;
+    geminiKeyInput.value = geminiApiKey;
+    deepseekModelSelect.value = deepseekModel;
+    deepseekKeyInput.value = deepseekApiKey;
+    selectProviderTab(aiProvider);
+    aiSettingsModal.classList.add('open');
+  });
+
+  const closeAiModal = () => aiSettingsModal.classList.remove('open');
+  aiModalClose.addEventListener('click', closeAiModal);
+  aiModalCloseTop.addEventListener('click', closeAiModal);
+
+  testApiBtn.addEventListener('click', async () => {
+    apiTestStatus.className = 'api-test-status visible';
+    apiTestStatus.textContent = 'Testing connection...';
+    const startMs = Date.now();
+
+    try {
+      if (aiProvider === 'local') {
+        apiTestStatus.className = 'api-test-status visible ok';
+        apiTestStatus.textContent = `✓ Built-in Local Semantic Engine verified and ready (0ms latency).`;
+        return;
+      }
+
+      if (aiProvider === 'deepseek') {
+        const key = deepseekKeyInput.value.trim();
+        const mod = deepseekModelSelect.value;
+        if (!key) throw new Error('Please paste your DeepSeek API key (sk-...) first.');
+        const st = scanClientIframeDom();
+        await planWithDeepSeekModel('What is on this page?', st, key, mod);
+        apiTestStatus.className = 'api-test-status visible ok';
+        apiTestStatus.textContent = `✓ Connected to DeepSeek (${mod}) in ${Date.now() - startMs}ms!`;
+        return;
+      }
+
+      if (aiProvider === 'gemini') {
+        const key = geminiKeyInput.value.trim();
+        const mod = geminiModelSelect.value;
+        if (!key) throw new Error('Please paste your Gemini API key (AIzaSy...) or select Built-in Local.');
+        const st = scanClientIframeDom();
+        await planWithGeminiModel('What is on this page?', st, key, mod);
+        apiTestStatus.className = 'api-test-status visible ok';
+        apiTestStatus.textContent = `✓ Connected to Google Gemini (${mod}) in ${Date.now() - startMs}ms!`;
+      }
+    } catch (err) {
+      apiTestStatus.className = 'api-test-status visible err';
+      apiTestStatus.textContent = `✕ Connection test failed: ${err.message}`;
+    }
+  });
+
+  aiModalSave.addEventListener('click', () => {
+    geminiModel = geminiModelSelect.value;
     geminiApiKey = geminiKeyInput.value.trim();
+    deepseekModel = deepseekModelSelect.value;
+    deepseekApiKey = deepseekKeyInput.value.trim();
+
+    localStorage.setItem('a11y_ai_provider', aiProvider);
+    localStorage.setItem('a11y_gemini_model', geminiModel);
     localStorage.setItem('a11y_gemini_key', geminiApiKey);
+    localStorage.setItem('a11y_deepseek_model', deepseekModel);
+    localStorage.setItem('a11y_deepseek_key', deepseekApiKey);
+
     updateEngineBadge();
-    geminiModal.classList.remove('open');
-    setAgentAnnouncement(
-      geminiApiKey
-        ? 'Gemini 2.5 Flash API key saved!'
-        : 'Cleared API key. Using built-in Semantic DOM Grounding engine.'
-    );
+    closeAiModal();
+    setAgentAnnouncement(`Saved AI settings: Active model is ${activeEngineBadge.textContent}.`);
   });
 
   agentCommandForm.addEventListener('submit', (e) => {
@@ -2394,20 +2481,6 @@ Return JSON with:
       voiceMicBtn.classList.remove('listening');
     };
   }
-
-  tabDeckBtn.addEventListener('click', () => {
-    tabDeckBtn.classList.add('active');
-    tabHistoryBtn.classList.remove('active');
-    deckPanelControls.style.display = 'flex';
-    deckPanelHistory.style.display = 'none';
-  });
-
-  tabHistoryBtn.addEventListener('click', () => {
-    tabHistoryBtn.classList.add('active');
-    tabDeckBtn.classList.remove('active');
-    deckPanelHistory.style.display = 'flex';
-    deckPanelControls.style.display = 'none';
-  });
 
   window.addEventListener('resize', () => {
     if (!usePlaywrightBackend) {

@@ -375,16 +375,16 @@ function findBestElement(elements, phrase, preferredFilter = null) {
 }
 
 /**
- * Calls Gemini Multimodal API (Vision + Set-of-Mark DOM elements) when an API key is provided.
+ * Builds the structured Set-of-Mark DOM prompt for LLM agents.
  */
-async function planWithGemini(command, state, apiKey) {
+function buildAgentSystemPrompt(command, state) {
   const elementLines = state.elements.map(e => {
     const optStr = e.options ? ` options=[${e.options.map(o => `"${o.text}"`).join(', ')}]` : '';
     const valStr = e.value ? ` currentValue="${e.value}"` : '';
     return `#${e.id} [${e.tag}/${e.type}] label="${e.label}"${valStr}${optStr} bbox=(${e.rect.x},${e.rect.y},${e.rect.width}x${e.rect.height})`;
   }).join('\n');
 
-  const prompt = `You are A11yPilot, an accessibility browser agent helping a person with a disability interact with a live webpage.
+  return `You are A11yPilot, an accessibility browser agent helping a person with a disability interact with a live webpage.
 Current Page Title: "${state.title}"
 Current URL: "${state.url}"
 Visible Page Alerts: ${JSON.stringify(state.alerts)}
@@ -394,53 +394,124 @@ ${elementLines}
 
 User Command: "${command}"
 
-Return a JSON object with:
+Return ONLY a valid JSON object with:
 1. "spokenResponse": A warm, clear, concise 1-2 sentence accessibility announcement of what you are doing or what is on the page.
 2. "steps": An array of ordered actions to fulfill the user's request. Each step must have:
    - "action": one of "click", "type", "select", "scroll", "navigate", "narrate"
    - "elementId": integer ID from the list above (required for click, type, select)
    - "value": string text to type, option text to select, or URL to navigate to
    - "explanation": short human-readable description of this step.`;
+}
 
+/**
+ * Calls Gemini Multimodal API (gemini-3.8-flash default + automatic cascade fallback) when an API key is provided.
+ */
+async function planWithGemini(command, state, apiKey, requestedModel = 'gemini-3.8-flash') {
+  const prompt = buildAgentSystemPrompt(command, state);
   const base64Image = state.screenshot.replace(/^data:image\/\w+;base64,/, '');
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
+  const candidateModels = Array.from(new Set([
+    requestedModel || 'gemini-3.8-flash',
+    'gemini-3.8-flash',
+    'gemini-3.8-pro',
+    'gemini-3.0-flash',
+    'gemini-2.0-flash'
+  ]));
+
+  let lastErr = null;
+  for (const modelId of candidateModels) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
               {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: base64Image
-                }
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: base64Image
+                    }
+                  }
+                ]
               }
-            ]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1
+            ],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1
+            }
+          })
         }
-      })
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        lastErr = new Error(`Gemini (${modelId}) HTTP ${response.status}: ${errText.slice(0, 160)}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        engine: `Google ${modelId}`,
+        spokenResponse: parsed.spokenResponse || 'Executing your requested browser actions.',
+        steps: Array.isArray(parsed.steps) ? parsed.steps : []
+      };
+    } catch (err) {
+      lastErr = err;
     }
-  );
+  }
+
+  throw lastErr || new Error('Gemini API request failed.');
+}
+
+/**
+ * Calls DeepSeek API (deepseek-chat / DeepSeek-V3 or deepseek-reasoner / DeepSeek-R1).
+ */
+async function planWithDeepSeek(command, state, apiKey, requestedModel = 'deepseek-chat') {
+  const prompt = buildAgentSystemPrompt(command, state);
+  const modelId = requestedModel || 'deepseek-chat';
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are A11yPilot, an accessibility web browser agent. Always respond with valid JSON containing "spokenResponse" and "steps".'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1
+    })
+  });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Gemini API HTTP ${response.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`DeepSeek (${modelId}) HTTP ${response.status}: ${errText.slice(0, 180)}`);
   }
 
   const data = await response.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-  const parsed = JSON.parse(rawText);
+  const rawText = data?.choices?.[0]?.message?.content || '{}';
+  const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
   return {
-    engine: 'Gemini 2.5 Flash (Multimodal Vision + DOM)',
+    engine: `DeepSeek (${modelId})`,
     spokenResponse: parsed.spokenResponse || 'Executing your requested browser actions.',
     steps: Array.isArray(parsed.steps) ? parsed.steps : []
   };
@@ -715,11 +786,13 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, ...result });
     }
 
-    // 4. API: Natural Language Visual Click/Type Agent (Gemini Multimodal + Local DOM Grounding)
+    // 4. API: Natural Language Visual Click/Type Agent (Gemini 3.8 + DeepSeek + Local DOM Grounding)
     if (req.method === 'POST' && pathname === '/api/agent') {
       const body = await readJsonBody(req);
       const command = String(body.command || '').trim();
-      const apiKey = String(body.apiKey || process.env.GEMINI_API_KEY || '').trim();
+      const provider = String(body.provider || 'local').trim();
+      const model = String(body.model || '').trim();
+      const apiKey = String(body.apiKey || process.env.GEMINI_API_KEY || process.env.DEEPSEEK_API_KEY || '').trim();
 
       if (!command) {
         return sendJson(res, 400, { ok: false, error: 'Please provide a command.' });
@@ -729,9 +802,17 @@ const server = http.createServer(async (req, res) => {
         const initialState = await scanPageAndCapture();
         let plan = null;
 
-        if (apiKey) {
+        if (provider === 'deepseek' && apiKey) {
           try {
-            plan = await planWithGemini(command, initialState, apiKey);
+            plan = await planWithDeepSeek(command, initialState, apiKey, model || 'deepseek-chat');
+          } catch (dsErr) {
+            console.warn('DeepSeek API fallback to local grounding:', dsErr.message);
+            plan = planWithLocalGrounding(command, initialState);
+            plan.engine = `Semantic DOM Grounding (DeepSeek fallback: ${dsErr.message.slice(0, 80)})`;
+          }
+        } else if (apiKey && provider !== 'local') {
+          try {
+            plan = await planWithGemini(command, initialState, apiKey, model || 'gemini-3.8-flash');
           } catch (geminiErr) {
             console.warn('Gemini API fallback to local grounding:', geminiErr.message);
             plan = planWithLocalGrounding(command, initialState);
