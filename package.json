@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test tests/a11y-pilot.test.js"
   },
   "dependencies": {
     "playwright-core": "^1.65.0"

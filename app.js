@@ -1561,7 +1561,7 @@
     const raw = String(command || '').trim();
     const lower = raw.toLowerCase();
 
-    if (/^(?:auto[-\s]?fill|fill\s+(?:out\s+|in\s+)?(?:the\s+|all\s+)?(?:form|fields|inputs)|complete\s+(?:the\s+)?form)$/i.test(lower)) {
+    if (/^(?:auto[-\s]?fill(?:\s+(?:the\s+|all\s+)?(?:form|fields|inputs))?|fill\s+(?:out\s+|in\s+)?(?:the\s+|all\s+)?(?:form|fields|inputs)|complete\s+(?:the\s+)?form)$/i.test(lower)) {
       const inputEls = elements.filter(e => e.category === 'input' && e.tag !== 'select');
       for (const inp of inputEls) {
         const sample = getSmartSampleValueForField(inp);
@@ -2304,8 +2304,8 @@ Return ONLY valid JSON with this exact structure:
         if (step.action === 'narrate') continue;
         const { record } = await performClientSingleAction(step);
         if (record.rect) {
-          moveAgentCursorToRect(record.rect, `${step.action.toUpperCase()} #${record.elementId || ''}`, 900);
-          await new Promise(r => setTimeout(r, 350));
+          moveAgentCursorToRect(record.rect, `${step.action.toUpperCase()} #${record.elementId || ''}`, 700);
+          await new Promise(r => setTimeout(r, 140));
         }
       }
 
