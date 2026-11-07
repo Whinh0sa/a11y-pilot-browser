@@ -100,19 +100,19 @@
         </button>
       </div>
 
-      <!-- Clear 3-Step User Flow Indicator -->
-      <div class="flow-stepper" aria-label="User Flow Steps">
-        <span class="flow-step active" id="flow-step-1">
+      <!-- Clear 3-Step User Flow Indicator (Interactive Buttons) -->
+      <div class="flow-stepper" role="group" aria-label="User Flow Steps">
+        <button type="button" class="flow-step active" id="flow-step-1" title="Step 1: Choose or enter a website URL">
           <span class="step-num">1</span> Load Site
-        </span>
+        </button>
         <span class="flow-arrow" aria-hidden="true">→</span>
-        <span class="flow-step" id="flow-step-2">
-          <span class="step-num">2</span> Auto-Fill or Tap
-        </span>
+        <button type="button" class="flow-step" id="flow-step-2" title="Step 2: Open Form Inputs to fill or auto-fill fields">
+          <span class="step-num">2</span> Fill Form
+        </button>
         <span class="flow-arrow" aria-hidden="true">→</span>
-        <span class="flow-step" id="flow-step-3">
+        <button type="button" class="flow-step" id="flow-step-3" title="Step 3: Submit the form on the page">
           <span class="step-num">3</span> Submit &amp; Verify
-        </span>
+        </button>
       </div>
     </div>
 

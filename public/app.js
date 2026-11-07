@@ -561,6 +561,13 @@
     });
   }
 
+  function setMobileView(target) {
+    mainWorkspace.setAttribute('data-mobile-view', target);
+    document.querySelectorAll('.mobile-nav-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-mobile-target') === target);
+    });
+  }
+
   function updateEngineBadge() {
     if (aiProvider === 'deepseek' && deepseekApiKey) {
       activeEngineBadge.textContent = deepseekModel === 'deepseek-reasoner' ? 'DeepSeek R1' : 'DeepSeek V3';
@@ -596,16 +603,58 @@
   tabActionsBtn.addEventListener('click', () => switchDeckTab('actions'));
   tabHistoryBtn.addEventListener('click', () => switchDeckTab('history'));
 
+  // Interactive 3-Step Flow Buttons in the 2nd Sub-Header Bar
+  const flowStep1Btn = document.getElementById('flow-step-1');
+  const flowStep2Btn = document.getElementById('flow-step-2');
+  const flowStep3Btn = document.getElementById('flow-step-3');
+
+  if (flowStep1Btn) {
+    flowStep1Btn.addEventListener('click', () => {
+      setFlowStep(1);
+      setMobileView('canvas');
+      urlInput.focus();
+      urlInput.select();
+    });
+  }
+
+  if (flowStep2Btn) {
+    flowStep2Btn.addEventListener('click', () => {
+      setFlowStep(2);
+      switchDeckTab('inputs');
+      if (window.innerWidth <= 960) {
+        setMobileView('inputs');
+      }
+      const firstInput = deckPanelInputs.querySelector('input, select');
+      if (firstInput) {
+        setTimeout(() => firstInput.focus(), 60);
+      }
+    });
+  }
+
+  if (flowStep3Btn) {
+    flowStep3Btn.addEventListener('click', () => {
+      setFlowStep(3);
+      const elements = (currentState && currentState.elements) || [];
+      const primarySubmitEl = elements.find(e =>
+        e.category === 'action' && /submit|confirm|book|order|request|enroll|log\s*in|sign\s*in/i.test(e.label)
+      ) || elements.find(e => e.category === 'action');
+      if (primarySubmitEl) {
+        executeDirectAction({ action: 'click', elementId: primarySubmitEl.id }, primarySubmitEl.rect, `Submitting #${primarySubmitEl.id}`);
+      }
+    });
+  }
+
   // Mobile Bottom Nav Switching
   document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-mobile-target');
-      document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.toggle('active', b === btn));
-      mainWorkspace.setAttribute('data-mobile-view', target);
+      setMobileView(target);
 
-      if (target === 'inputs') switchDeckTab('inputs');
-      else if (target === 'actions') switchDeckTab('actions');
-      else if (target === 'ai') {
+      if (target === 'inputs') {
+        switchDeckTab('inputs');
+      } else if (target === 'actions') {
+        switchDeckTab('actions');
+      } else if (target === 'ai') {
         switchDeckTab('history');
         setTimeout(() => agentCommandInput.focus(), 80);
       } else if (target === 'canvas') {
@@ -1215,8 +1264,11 @@
     }
 
     const win = viewportIframe.contentWindow;
+    const viewW = (win && win.innerWidth) || viewportStage.clientWidth || 960;
+    const viewH = (win && win.innerHeight) || viewportStage.clientHeight || 640;
+
     for (const el of candidates) {
-      if (elements.length >= 75) break;
+      if (elements.length >= 85) break;
       let style;
       try {
         style = win.getComputedStyle(el);
@@ -1224,16 +1276,21 @@
         continue;
       }
       if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 8 || rect.height < 8) continue;
 
       const tag = el.tagName.toLowerCase();
       const type = (el.getAttribute('type') || (tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'text')).toLowerCase();
       const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag === 'select' ? 'combobox' : type === 'checkbox' ? 'checkbox' : 'textbox');
       const category = getCategory(tag, type, role);
 
-      const maxBottom = category === 'input' ? win.innerHeight + 900 : win.innerHeight + 60;
-      if (rect.bottom < 0 || rect.right < 0 || rect.top > maxBottom || rect.left > win.innerWidth) continue;
+      const rect = el.getBoundingClientRect();
+      // Form inputs and action buttons should never disappear when scrolled out of view
+      if (category === 'navigation') {
+        if (rect.width < 6 || rect.height < 6) continue;
+        if (rect.bottom < -100 || rect.right < 0 || rect.top > viewH + 300 || rect.left > viewW) continue;
+      } else {
+        // For inputs/buttons/toggles, only skip if truly collapsed (0x0 and hidden)
+        if (rect.width < 2 && rect.height < 2 && el.offsetParent === null) continue;
+      }
 
       const label = getAccessibleLabel(el);
       if (!label || label.length < 1) continue;
@@ -1253,6 +1310,14 @@
         options = Array.from(el.options).map(o => ({ text: o.text.trim(), value: o.value, selected: o.selected }));
       }
 
+      const inViewport =
+        rect.width >= 6 &&
+        rect.height >= 6 &&
+        rect.bottom > 0 &&
+        rect.top < viewH &&
+        rect.right > 0 &&
+        rect.left < viewW;
+
       elements.push({
         id,
         tag,
@@ -1263,11 +1328,12 @@
         placeholder: el.getAttribute('placeholder') || '',
         value,
         options,
+        inViewport,
         rect: {
           x: Math.round(rect.left),
           y: Math.round(rect.top),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height)
+          width: Math.max(24, Math.round(rect.width)),
+          height: Math.max(24, Math.round(rect.height))
         }
       });
     }
@@ -1303,15 +1369,25 @@
     return state;
   }
 
-  function setNativeFormValue(domNode, val) {
+  function setNativeFormValue(domNode, val, options = {}) {
+    if (!domNode) return;
     const strVal = String(val ?? '');
-    domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    domNode.focus();
+    if (options.scroll !== false) {
+      try {
+        domNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (_) {}
+    }
+    if (options.focusIframe === true) {
+      try {
+        domNode.focus();
+      } catch (_) {}
+    }
 
     try {
+      const win = (domNode.ownerDocument && domNode.ownerDocument.defaultView) || window;
       const proto = domNode.tagName === 'TEXTAREA'
-        ? window.HTMLTextAreaElement.prototype
-        : window.HTMLInputElement.prototype;
+        ? win.HTMLTextAreaElement.prototype
+        : win.HTMLInputElement.prototype;
       const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (nativeSetter) {
         nativeSetter.call(domNode, strVal);
@@ -1326,10 +1402,7 @@
     domNode.setAttribute('value', strVal);
     domNode.classList.add('__a11y_filled_highlight');
 
-    domNode.dispatchEvent(new Event('focus', { bubbles: true }));
-    domNode.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }));
     domNode.dispatchEvent(new Event('input', { bubbles: true }));
-    domNode.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
     domNode.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -1859,6 +1932,8 @@ Return ONLY valid JSON with this exact structure:
     const dims = getViewportDimensions();
 
     for (const el of elements) {
+      if (el.inViewport === false) continue;
+
       const box = document.createElement('div');
       box.className = `som-box category-${el.category}`;
       box.dataset.id = String(el.id);
@@ -1906,162 +1981,203 @@ Return ONLY valid JSON with this exact structure:
     if (mobileInputsCount) mobileInputsCount.textContent = String(inputs.length);
     if (mobileActionsCount) mobileActionsCount.textContent = String(actionsAndLinks.length);
 
-    // 1. Render Form Inputs Tab
-    deckPanelInputs.innerHTML = '';
-    if (inputs.length === 0) {
-      deckPanelInputs.innerHTML = `<div class="local-info-box">No fillable text inputs detected on this view. Switch to the <strong>Buttons &amp; Links</strong> tab to navigate further.</div>`;
-    } else {
-      const headerRow = document.createElement('div');
-      headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
-      headerRow.innerHTML = `<span class="section-label">Step 2: Fill Webpage Fields (${inputs.length})</span>`;
+    // 1. Render Form Inputs Tab (Non-Destructive DOM Diffing so focused inputs & Fill buttons NEVER disappear)
+    const activePageKey = currentExternalUrl || currentSiteKey || 'default';
+    const inputSig = `${activePageKey}::` + inputs.map(e => `${e.id}:${e.tag}:${e.type}:${e.label}`).join('|');
 
-      const autoBtn = document.createElement('button');
-      autoBtn.type = 'button';
-      autoBtn.className = 'autofill-cta-btn';
-      autoBtn.textContent = 'Auto-Fill All';
-      autoBtn.addEventListener('click', () => runAgentCommand('Auto-fill form'));
-      headerRow.appendChild(autoBtn);
-      deckPanelInputs.appendChild(headerRow);
-
-      const list = document.createElement('div');
-      list.className = 'a11y-card-list';
-
+    if (deckPanelInputs.dataset.sig === inputSig && inputs.length > 0 && deckPanelInputs.querySelector('.a11y-card-list')) {
+      // Update values in-place ONLY for fields that are not currently focused by the user
       for (const el of inputs) {
-        const card = document.createElement('div');
-        card.className = 'a11y-control-card';
-        card.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
-        card.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
-        card.addEventListener('focusin', () => highlightElementOnViewport(el.id, true));
-        card.addEventListener('focusout', () => highlightElementOnViewport(el.id, false));
-
-        const topRow = document.createElement('div');
-        topRow.className = 'card-top-row';
-        topRow.innerHTML = `
-          <span class="badge-pill input-pill">#${el.id}</span>
-          <label class="control-name" for="deck-input-${el.id}">${escapeHtml(el.label)}</label>
-          <span class="control-role-tag">${escapeHtml(el.tag === 'select' ? 'dropdown' : el.type)}</span>
-        `;
-        card.appendChild(topRow);
-
-        const fieldRow = document.createElement('div');
-        fieldRow.className = 'inline-field-row';
-
-        if (el.tag === 'select' && Array.isArray(el.options)) {
-          const sel = document.createElement('select');
-          sel.id = `deck-input-${el.id}`;
-          for (const opt of el.options) {
-            const o = document.createElement('option');
-            o.value = opt.value;
-            o.textContent = opt.text;
-            if (opt.selected) o.selected = true;
-            sel.appendChild(o);
+        const fieldNode = document.getElementById(`deck-input-${el.id}`);
+        if (fieldNode && document.activeElement !== fieldNode) {
+          if (fieldNode.value !== (el.value || '')) {
+            fieldNode.value = el.value || '';
           }
-          sel.addEventListener('change', () => {
-            executeDirectAction({ action: 'select', elementId: el.id, value: sel.value }, el.rect, `Selecting #${el.id}`);
-          });
-          fieldRow.appendChild(sel);
-        } else {
-          const inp = document.createElement('input');
-          inp.id = `deck-input-${el.id}`;
-          inp.type = 'text';
-          inp.value = el.value || '';
-          inp.placeholder = el.placeholder || `Enter ${el.label}...`;
+        }
+      }
+    } else {
+      deckPanelInputs.dataset.sig = inputSig;
+      deckPanelInputs.innerHTML = '';
 
-          const applyBtn = document.createElement('button');
-          applyBtn.type = 'button';
-          applyBtn.className = 'apply-btn';
-          applyBtn.textContent = 'Fill';
+      if (inputs.length === 0) {
+        deckPanelInputs.innerHTML = `<div class="local-info-box">No fillable text inputs detected on this view. Switch to the <strong>Buttons &amp; Links</strong> tab to navigate further.</div>`;
+      } else {
+        const headerRow = document.createElement('div');
+        headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;';
+        headerRow.innerHTML = `<span class="section-label">Step 2: Type or Auto-Fill Fields (${inputs.length})</span>`;
 
-          const triggerType = () => {
-            executeDirectAction(
-              { action: 'type', elementId: el.id, value: inp.value },
-              el.rect,
-              `Filling #${el.id}`
-            );
-          };
+        const autoBtn = document.createElement('button');
+        autoBtn.type = 'button';
+        autoBtn.className = 'autofill-cta-btn';
+        autoBtn.textContent = 'Auto-Fill All';
+        autoBtn.addEventListener('click', () => runAgentCommand('Auto-fill form'));
+        headerRow.appendChild(autoBtn);
+        deckPanelInputs.appendChild(headerRow);
 
-          applyBtn.addEventListener('click', triggerType);
-          inp.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') {
-              ev.preventDefault();
-              triggerType();
+        const list = document.createElement('div');
+        list.className = 'a11y-card-list';
+
+        for (const el of inputs) {
+          const card = document.createElement('div');
+          card.className = 'a11y-control-card';
+          card.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
+          card.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
+          card.addEventListener('focusin', () => highlightElementOnViewport(el.id, true));
+          card.addEventListener('focusout', () => highlightElementOnViewport(el.id, false));
+
+          const topRow = document.createElement('div');
+          topRow.className = 'card-top-row';
+          topRow.innerHTML = `
+            <span class="badge-pill input-pill">#${el.id}</span>
+            <label class="control-name" for="deck-input-${el.id}">${escapeHtml(el.label)}</label>
+            <span class="control-role-tag">${escapeHtml(el.tag === 'select' ? 'dropdown' : el.type)}</span>
+          `;
+          card.appendChild(topRow);
+
+          const fieldRow = document.createElement('div');
+          fieldRow.className = 'inline-field-row';
+
+          if (el.tag === 'select' && Array.isArray(el.options)) {
+            const sel = document.createElement('select');
+            sel.id = `deck-input-${el.id}`;
+            for (const opt of el.options) {
+              const o = document.createElement('option');
+              o.value = opt.value;
+              o.textContent = opt.text;
+              if (opt.selected) o.selected = true;
+              sel.appendChild(o);
             }
-          });
+            sel.addEventListener('change', () => {
+              executeDirectAction({ action: 'select', elementId: el.id, value: sel.value }, el.rect, `Selecting #${el.id}`);
+            });
+            fieldRow.appendChild(sel);
+          } else {
+            const inp = document.createElement('input');
+            inp.id = `deck-input-${el.id}`;
+            inp.type = 'text';
+            inp.value = el.value || '';
+            inp.placeholder = el.placeholder || `Enter ${el.label}...`;
 
-          fieldRow.appendChild(inp);
-          fieldRow.appendChild(applyBtn);
+            const applyBtn = document.createElement('button');
+            applyBtn.type = 'button';
+            applyBtn.className = 'apply-btn';
+            applyBtn.textContent = 'Fill';
+
+            // Live two-way sync as user types in the input box!
+            inp.addEventListener('input', () => {
+              setFlowStep(2);
+              const doc = viewportIframe.contentDocument;
+              const domNode = doc ? doc.querySelector(`[data-a11y-id="${el.id}"]`) : null;
+              if (domNode) {
+                setNativeFormValue(domNode, inp.value, { scroll: false, focusIframe: false });
+              }
+            });
+
+            // Prevent mousedown on Fill button from blurring input and causing mobile keyboard jump
+            applyBtn.addEventListener('mousedown', (ev) => {
+              ev.preventDefault();
+            });
+
+            const triggerType = () => {
+              applyBtn.textContent = '✓ Filled';
+              setTimeout(() => {
+                if (applyBtn.isConnected) applyBtn.textContent = 'Fill';
+              }, 1200);
+              executeDirectAction(
+                { action: 'type', elementId: el.id, value: inp.value },
+                el.rect,
+                `Filling #${el.id}`
+              );
+            };
+
+            applyBtn.addEventListener('click', triggerType);
+            inp.addEventListener('keydown', (ev) => {
+              if (ev.key === 'Enter') {
+                ev.preventDefault();
+                triggerType();
+              }
+            });
+
+            fieldRow.appendChild(inp);
+            fieldRow.appendChild(applyBtn);
+          }
+
+          card.appendChild(fieldRow);
+          list.appendChild(card);
         }
 
-        card.appendChild(fieldRow);
-        list.appendChild(card);
+        deckPanelInputs.appendChild(list);
+
+        // Step 3 CTA: Primary Submit button right at the bottom of the Form Inputs tab!
+        const primarySubmitEl = elements.find(e =>
+          e.category === 'action' && /submit|confirm|book|order|request|enroll|log\s*in|sign\s*in/i.test(e.label)
+        ) || elements.find(e => e.category === 'action');
+
+        if (primarySubmitEl) {
+          const submitCard = document.createElement('button');
+          submitCard.type = 'button';
+          submitCard.className = 'primary-btn';
+          submitCard.style.cssText = 'width:100%;min-height:46px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;';
+          submitCard.innerHTML = `<span>Step 3: ${escapeHtml(primarySubmitEl.label)} (#${primarySubmitEl.id})</span> <span>→</span>`;
+          submitCard.addEventListener('click', () => {
+            executeDirectAction({ action: 'click', elementId: primarySubmitEl.id }, primarySubmitEl.rect, `Submitting #${primarySubmitEl.id}`);
+          });
+          deckPanelInputs.appendChild(submitCard);
+        }
       }
+    }
 
-      deckPanelInputs.appendChild(list);
+    // 2. Render Buttons & Links Tab with Instant Filter (Non-Destructive Diffing)
+    const actionSig = `${activePageKey}::` + actionsAndLinks.map(e => `${e.id}:${e.label}:${e.value}`).join('|');
+    if (deckPanelActions.dataset.sig !== actionSig) {
+      deckPanelActions.dataset.sig = actionSig;
+      deckPanelActions.innerHTML = '';
 
-      // Step 3 CTA: Primary Submit button right at the bottom of the Form Inputs tab!
-      const primarySubmitEl = elements.find(e =>
-        e.category === 'action' && /submit|confirm|book|order|request|enroll|log\s*in|sign\s*in/i.test(e.label)
-      ) || elements.find(e => e.category === 'action');
+      const filterInput = document.createElement('input');
+      filterInput.type = 'text';
+      filterInput.className = 'deck-filter-input';
+      filterInput.placeholder = 'Filter buttons or links by name or #badge...';
+      filterInput.setAttribute('aria-label', 'Filter buttons and links');
+      deckPanelActions.appendChild(filterInput);
 
-      if (primarySubmitEl) {
-        const submitCard = document.createElement('button');
-        submitCard.type = 'button';
-        submitCard.className = 'primary-btn';
-        submitCard.style.cssText = 'width:100%;min-height:46px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;';
-        submitCard.innerHTML = `<span>Step 3: ${escapeHtml(primarySubmitEl.label)} (#${primarySubmitEl.id})</span> <span>→</span>`;
-        submitCard.addEventListener('click', () => {
-          executeDirectAction({ action: 'click', elementId: primarySubmitEl.id }, primarySubmitEl.rect, `Submitting #${primarySubmitEl.id}`);
+      const actionList = document.createElement('div');
+      actionList.className = 'a11y-card-list';
+
+      for (const el of actionsAndLinks) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'big-action-btn';
+        btn.dataset.filterText = `#${el.id} ${el.label}`.toLowerCase();
+
+        const stateSuffix = el.type === 'checkbox' ? ` (${el.value === 'checked' ? '✓ Checked' : 'Unchecked'})` : '';
+        const kindLabel = el.category === 'navigation' ? 'Link ↗' : el.type === 'checkbox' ? 'Toggle' : 'Button →';
+
+        btn.innerHTML = `
+          <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+            <span class="badge-pill">#${el.id}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(el.label)}${escapeHtml(stateSuffix)}</span>
+          </span>
+          <span class="control-role-tag" style="flex-shrink:0;">${kindLabel}</span>
+        `;
+        btn.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
+        btn.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
+        btn.addEventListener('focus', () => highlightElementOnViewport(el.id, true));
+        btn.addEventListener('blur', () => highlightElementOnViewport(el.id, false));
+        btn.addEventListener('click', () => {
+          executeDirectAction({ action: 'click', elementId: el.id }, el.rect, `Clicking #${el.id}`);
         });
-        deckPanelInputs.appendChild(submitCard);
+        actionList.appendChild(btn);
       }
-    }
 
-    // 2. Render Buttons & Links Tab with Instant Filter
-    deckPanelActions.innerHTML = '';
-    const filterInput = document.createElement('input');
-    filterInput.type = 'text';
-    filterInput.className = 'deck-filter-input';
-    filterInput.placeholder = 'Filter buttons or links by name or #badge...';
-    filterInput.setAttribute('aria-label', 'Filter buttons and links');
-    deckPanelActions.appendChild(filterInput);
-
-    const actionList = document.createElement('div');
-    actionList.className = 'a11y-card-list';
-
-    for (const el of actionsAndLinks) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'big-action-btn';
-      btn.dataset.filterText = `#${el.id} ${el.label}`.toLowerCase();
-
-      const stateSuffix = el.type === 'checkbox' ? ` (${el.value === 'checked' ? '✓ Checked' : 'Unchecked'})` : '';
-      const kindLabel = el.category === 'navigation' ? 'Link ↗' : el.type === 'checkbox' ? 'Toggle' : 'Button →';
-
-      btn.innerHTML = `
-        <span style="display:flex;align-items:center;gap:9px;min-width:0;">
-          <span class="badge-pill">#${el.id}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(el.label)}${escapeHtml(stateSuffix)}</span>
-        </span>
-        <span class="control-role-tag" style="flex-shrink:0;">${kindLabel}</span>
-      `;
-      btn.addEventListener('mouseenter', () => highlightElementOnViewport(el.id, true));
-      btn.addEventListener('mouseleave', () => highlightElementOnViewport(el.id, false));
-      btn.addEventListener('focus', () => highlightElementOnViewport(el.id, true));
-      btn.addEventListener('blur', () => highlightElementOnViewport(el.id, false));
-      btn.addEventListener('click', () => {
-        executeDirectAction({ action: 'click', elementId: el.id }, el.rect, `Clicking #${el.id}`);
+      filterInput.addEventListener('input', () => {
+        const q = filterInput.value.toLowerCase().trim();
+        actionList.querySelectorAll('.big-action-btn').forEach(b => {
+          b.style.display = (!q || b.dataset.filterText.includes(q)) ? 'flex' : 'none';
+        });
       });
-      actionList.appendChild(btn);
+
+      deckPanelActions.appendChild(actionList);
     }
-
-    filterInput.addEventListener('input', () => {
-      const q = filterInput.value.toLowerCase().trim();
-      actionList.querySelectorAll('.big-action-btn').forEach(b => {
-        b.style.display = (!q || b.dataset.filterText.includes(q)) ? 'flex' : 'none';
-      });
-    });
-
-    deckPanelActions.appendChild(actionList);
   }
 
   function renderStepHistory(history) {
@@ -2483,6 +2599,10 @@ Return ONLY valid JSON with this exact structure:
   }
 
   window.addEventListener('resize', () => {
+    const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+    if (activeTag === 'input' || activeTag === 'select' || activeTag === 'textarea') {
+      return;
+    }
     if (!usePlaywrightBackend) {
       scanClientIframeDom();
     }
