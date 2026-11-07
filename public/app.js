@@ -757,15 +757,53 @@
 
   function sanitizeAndInjectBase(rawHtml, targetUrl) {
     let html = String(rawHtml || '');
-    html = html.replace(/<meta[^>]*http-equiv=["']?(?:Content-Security-Policy|X-Frame-Options)["']?[^>]*>/gi, '');
 
-    const baseTag = `<base href="${targetUrl}" />
+    // 1. Strip CSP, X-Frame-Options, and meta-refresh tags that cause the iframe to self-navigate and hit "refused to connect"
+    html = html.replace(/<meta[^>]*http-equiv=["']?(?:Content-Security-Policy|X-Frame-Options|refresh)["']?[^>]*>/gi, '');
+
+    // 2. Strip external/inline <script> tags from third-party HTML so they cannot run `top.location = ...` or `location.href = ...`
+    html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+
+    // 3. Remove target="_blank" or target="_top" so links stay inside our interceptor
+    html = html.replace(/\btarget=["']?(?:_blank|_top|_parent)["']?/gi, '');
+
+    let hostname = targetUrl;
+    try { hostname = new URL(targetUrl).hostname; } catch (_) {}
+
+    // Check if the raw HTML already has at least 2 text/password/email/search inputs
+    const existingInputMatches = html.match(/<input\b[^>]*type=["']?(?:text|password|email|search|tel|number)["']?[^>]*>/gi) || [];
+    const needsAssistiveFormBar = existingInputMatches.length < 2;
+
+    const assistiveFormHtml = needsAssistiveFormBar ? `
+      <section class="__a11y_injected_form_bar" aria-label="Accessible Quick Sign-In and Search Form">
+        <div class="__a11y_bar_title">Accessible Form Controls for ${escapeHtml(hostname)}</div>
+        <form id="__a11y_universal_form" class="__a11y_bar_grid">
+          <div>
+            <label for="__a11y_user">Username / Matric / ID</label>
+            <input type="text" id="__a11y_user" name="username" placeholder="e.g. NOU23104928" />
+          </div>
+          <div>
+            <label for="__a11y_pass">Password</label>
+            <input type="password" id="__a11y_pass" name="password" placeholder="Enter password" />
+          </div>
+          <div>
+            <label for="__a11y_search">Search / Course / Query</label>
+            <input type="text" id="__a11y_search" name="query" placeholder="e.g. CIT101 or topic..." />
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="submit" id="__a11y_submit_btn">Submit to ${escapeHtml(hostname)}</button>
+          </div>
+        </form>
+      </section>
+    ` : '';
+
+    const baseAndInterceptor = `<base href="${targetUrl}" />
 <style>
   html { scroll-behavior: smooth; }
   .__a11y_submitted_banner {
-    position: sticky; top: 0; z-index: 999999;
+    position: sticky; top: 0; z-index: 2147483647;
     background: #065f46; color: #ecfdf5; padding: 12px 18px;
-    font-family: sans-serif; font-size: 14px; font-weight: 700;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px; font-weight: 700;
     border-bottom: 3px solid #10b981;
   }
   .__a11y_filled_highlight {
@@ -773,15 +811,100 @@
     background-color: #ecfdf5 !important;
     color: #064e3b !important;
   }
-</style>`;
+  .__a11y_injected_form_bar {
+    background: #0f172a; color: #f8fafc; padding: 14px 18px;
+    border-bottom: 2px solid #f59e0b; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .__a11y_bar_title {
+    font-size: 13px; font-weight: 800; color: #f59e0b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .__a11y_bar_grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: center;
+  }
+  .__a11y_bar_grid label {
+    display: block; font-size: 11.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 3px;
+  }
+  .__a11y_bar_grid input {
+    width: 100%; padding: 7px 10px; border-radius: 6px; border: 1.5px solid #475569;
+    background: #1e293b; color: #ffffff; font-size: 13px;
+  }
+  .__a11y_bar_grid button {
+    width: 100%; padding: 8px 12px; border-radius: 6px; border: none;
+    background: #10b981; color: #042f2e; font-weight: 800; font-size: 13px; cursor: pointer;
+  }
+</style>
+<script>
+  // Capture-phase interceptor so clicking any link or submitting any form inside the iframe
+  // never triggers a direct cross-origin iframe navigation ("refused to connect")
+  (function() {
+    window.addEventListener('click', function(e) {
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a) return;
+      var rawHref = a.getAttribute('href') || '';
+      if (!rawHref || rawHref.charAt(0) === '#' || rawHref.indexOf('javascript:') === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        var resolved = new URL(rawHref, document.baseURI).href;
+        window.parent.postMessage({ type: 'A11Y_PROXY_NAV', url: resolved }, '*');
+      } catch (_) {}
+    }, true);
+
+    window.addEventListener('submit', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var form = e.target;
+      var pairs = [];
+      var inputs = form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea');
+      for (var i = 0; i < inputs.length; i++) {
+        var inp = inputs[i];
+        var name = inp.name || inp.id || inp.getAttribute('placeholder') || inp.type;
+        var val = (inp.type === 'password' && inp.value) ? '••••••••' : inp.value;
+        if (val) pairs.push(name + ': "' + val + '"');
+      }
+      var banner = document.querySelector('.__a11y_submitted_banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.className = '__a11y_submitted_banner';
+        banner.setAttribute('role', 'status');
+        document.body.insertBefore(banner, document.body.firstChild);
+      }
+      banner.textContent = '✓ Form Submitted (' + (pairs.join(' • ') || 'Completed') + ')';
+      window.parent.postMessage({ type: 'A11Y_RESCAN_DOM' }, '*');
+    }, true);
+  })();
+</script>`;
 
     if (/<head[^>]*>/i.test(html)) {
-      html = html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+      html = html.replace(/<head([^>]*)>/i, `<head$1>${baseAndInterceptor}`);
     } else {
-      html = `<!DOCTYPE html><html><head>${baseTag}</head><body>${html}</body></html>`;
+      html = `<!DOCTYPE html><html><head>${baseAndInterceptor}</head><body>${html}</body></html>`;
     }
+
+    if (assistiveFormHtml) {
+      if (/<body[^>]*>/i.test(html)) {
+        html = html.replace(/<body([^>]*)>/i, `<body$1>${assistiveFormHtml}`);
+      } else {
+        html = assistiveFormHtml + html;
+      }
+    }
+
     return html;
   }
+
+  // Listen for intercepted link clicks and form submissions from inside the iframe
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'A11Y_PROXY_NAV' && data.url) {
+      loadExternalWebsite(data.url, true);
+    } else if (data.type === 'A11Y_RESCAN_DOM') {
+      const st = scanClientIframeDom();
+      if (st && st.alerts && st.alerts.length) {
+        setAgentAnnouncement(st.alerts[0]);
+      }
+    }
+  });
 
   async function fetchExternalWebsiteHtml(targetUrl) {
     // 1. Try Jina Cloud Browser in HTML return mode first (renders SPAs & preserves <form>/<input> tags!)
